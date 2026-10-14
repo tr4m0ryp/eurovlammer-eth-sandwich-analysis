@@ -57,7 +57,7 @@ def block_rows(blk: dict) -> list[dict]:
             "transfers": [t[0] for t in f.transfers],
             "transfer_amts": [t[1] for t in f.transfers],
             "slack": e.slack, "mesp": e.mesp, "front_opt": e.front, "slack_exec": e_own.slack,
-            "role": rl, "sandwich": k if k < 0 else f"{slot}:{k}",
+            "role": rl, "sandwich": f"{slot}:{k}" if k >= 0 else "",
             "sw_link": sw.linked_by if sw else "", "sw_profit": sw.profit if sw else None,
             "sw_attacker": sw.attacker if sw else "", "sw_nvict": len(sw.victims) if sw else 0,
         })
