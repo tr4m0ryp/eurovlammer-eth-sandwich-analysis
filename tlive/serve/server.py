@@ -7,6 +7,7 @@ open stream; a slow client drops events rather than holding the pipeline.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import deque
 from pathlib import Path
 
@@ -14,6 +15,8 @@ import orjson
 from aiohttp import web
 
 PAGE = Path(__file__).parent / "page"
+DOCS = Path(__file__).resolve().parents[2] / "data" / "artifact"
+DOC_ID = re.compile(r"(optimal|visibility|exposure)/(summary|rows_\d{3})")
 RECENT = 600
 SNAP_FLAGS = 120
 SNAP_RISK = 120
@@ -79,6 +82,14 @@ def app(hub: Hub) -> web.Application:
                             option=orjson.OPT_SERIALIZE_NUMPY)
         return web.Response(body=body, content_type="application/json")
 
+    async def doc(req):
+        """The study documents the artifact reads from its database, served from disk."""
+        doc_id = req.match_info["id"]
+        path = DOCS / f"{doc_id}.json"
+        if not DOC_ID.fullmatch(doc_id) or not path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers={"Content-Type": "application/json", "Cache-Control": "no-cache"})
+
     async def stream(req):
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"})
         await resp.prepare(req)
@@ -101,6 +112,7 @@ def app(hub: Hub) -> web.Application:
     a.router.add_get("/", index)
     a.router.add_get("/api/snapshot", snapshot)
     a.router.add_get("/api/stream", stream)
+    a.router.add_get("/api/doc/{id:.+}", doc)
     a.router.add_static("/static", PAGE)
     return a
 
