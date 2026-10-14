@@ -52,6 +52,18 @@ def app_rate(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
     return test.router.map(rate).fillna(prior).to_numpy()
 
 
+def route_oof(train: pd.DataFrame, k: int = 5) -> np.ndarray:
+    """Out-of-fold route rate on the training rows (contiguous slot blocks), so the feature never
+    sees its own row's label."""
+    out = np.empty(len(train))
+    blocks = np.array_split(np.arange(len(train)), k)
+    for b in blocks:
+        mask = np.ones(len(train), bool)
+        mask[b] = False
+        out[b] = app_rate(train[mask], train.iloc[b])
+    return out
+
+
 def gbm(train: pd.DataFrame, test: pd.DataFrame, cols: list[str], rounds: int = 400):
     m = lgb.train(PARAMS, lgb.Dataset(train[cols], train.y), rounds)
     return m.predict(test[cols]), m
@@ -75,6 +87,9 @@ def run(df: pd.DataFrame) -> tuple[pd.DataFrame, lgb.Booster]:
     p_all, model = gbm(tr, te, FEATURES)
     scores["GBM without phi/MESP"] = p_free
     scores["GBM full"] = p_all
+    tr, te = tr.assign(route_rate=route_oof(tr)), te.assign(route_rate=app_rate(tr, te))
+    p_route, _ = gbm(tr, te, FEATURES + ["route_rate"])
+    scores["GBM full + route rate"] = p_route
     rows = []
     for name, s in scores.items():
         p1, r1 = topk(y, s, 0.01)
