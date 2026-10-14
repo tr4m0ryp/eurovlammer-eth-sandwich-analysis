@@ -15,6 +15,10 @@ from aiohttp import web
 
 PAGE = Path(__file__).parent / "page"
 RECENT = 600
+SNAP_FLAGS = 120
+SNAP_RISK = 120
+SNAP_SANDS = 50
+SNAP_VISIBLE = 120
 
 
 class Hub:
@@ -66,8 +70,12 @@ def app(hub: Hub) -> web.Application:
         return web.FileResponse(PAGE / "index.html")
 
     async def snapshot(_):
-        body = orjson.dumps({"stats": hub.stats, "flags": list(hub.flags), "sandwiches": list(hub.sandwiches),
-                             "risk": list(hub.risk), "visible": list(hub.visible_optimal)},
+        flags = list(hub.flags)[-SNAP_FLAGS:]
+        sands = list(hub.sandwiches)[-SNAP_SANDS:]
+        risk = list(hub.risk)[-SNAP_RISK:]
+        visible = list(hub.visible_optimal)[-SNAP_VISIBLE:]
+        body = orjson.dumps({"stats": hub.stats, "flags": flags, "sandwiches": sands,
+                             "risk": risk, "visible": visible},
                             option=orjson.OPT_SERIALIZE_NUMPY)
         return web.Response(body=body, content_type="application/json")
 

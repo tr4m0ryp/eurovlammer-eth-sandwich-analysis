@@ -1,22 +1,8 @@
 // Live page: one snapshot on load, then server-sent events. All numbers come from the screener.
+// bootLocal is called by boot.js when running locally (not on claude.ai artifact mode).
 "use strict";
-const $ = (s) => document.querySelector(s);
 const MAX_ROWS = 400;
 const S = { flags: [], sands: [], risk: [], visible: [], rview: "", vview: "", stats: {}, f: { venue: "", side: "", status: "" }, pmin: null, paused: false };
-
-const fmt = {
-  sol: (l) => (l == null ? "" : (l / 1e9).toFixed(l >= 1e10 ? 1 : 3)),
-  n: (v, d = 2) => (v == null ? "" : Number(v).toFixed(d)),
-  int: (v) => (v == null ? "" : Math.round(v).toLocaleString("en-US")),
-  pct: (v) => (v == null || !isFinite(v) ? "n/a" : (100 * v).toFixed(1) + "%"),
-  slack: (v) => (v == null ? "?" : v >= 10 ? "none" : (100 * v).toFixed(1) + "%"),
-  time: (ms) => new Date(ms).toISOString().slice(11, 19),
-  short: (a) => (a ? a.slice(0, 4) + ".." + a.slice(-4) : "direct"),
-};
-
-function stat(label, v, s) {
-  return `<div class="stat"><div class="lbl">${label}</div><div class="v">${v}</div><div class="s">${s || ""}</div></div>`;
-}
 
 function renderStats() {
   const t = S.stats;
@@ -127,6 +113,8 @@ function renderVisible(freshKey) {
     || `<tr><td colspan="13" class="muted">No visible optimal targets yet. Waiting for buys that pass our filter and are visible to us.</td></tr>`;
   $("#vis-live-n").textContent = `${rows.length} shown of ${S.visible.length} in memory`;
 }
+
+function renderCal() {
   const c = S.stats.calibration;
   if (!c) return;
   const max = Math.max(...c.map((b) => (b.n ? b.hits / b.n : 0)), 1e-6);
@@ -184,10 +172,6 @@ function setPmin(v) {
 }
 
 function wire() {
-  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === b));
-    document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== b.dataset.tab));
-  }));
   document.querySelectorAll(".seg[data-f]").forEach((g) => g.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -203,7 +187,7 @@ function wire() {
     renderRisk();
   }));
   $("#pmin").addEventListener("input", (e) => { setPmin(e.target.value); renderFlags(); });
-  document.querySelectorAll(".seg[data-v]").forEach((g) => g.addEventListener("click", (e) => {
+  document.querySelectorAll(".seg[data-lv]").forEach((g) => g.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     g.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
@@ -252,7 +236,7 @@ async function bootArtifact() {
   }, () => { $("#live-t").textContent = "feed unavailable"; });
 }
 
-async function boot() {
+async function bootLocal() {
   wire();
   if (window.claude && window.claude.use) return bootArtifact();
   try {
@@ -270,4 +254,3 @@ async function boot() {
   es.onmessage = (ev) => onEvent(JSON.parse(ev.data));
   es.onerror = () => { $("#live").className = "live off"; $("#live-t").textContent = "reconnecting"; };
 }
-boot();
