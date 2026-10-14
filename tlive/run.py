@@ -122,6 +122,7 @@ async def main(cfg: dict) -> None:
                 hub.stats = st.view(f, scorer, lab, slot)
                 hub.publish("stats", hub.stats)
         finally:
+            f.exec.shutdown(cancel_futures=True)
             store.close()
             await runner.cleanup()
 
