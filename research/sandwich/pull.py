@@ -13,12 +13,25 @@ import asyncio
 import gzip
 import json
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+
+import orjson
 
 from tlive.chain.programs import PUMP, PUMPSWAP
 from tlive.ingest.rpc import Rpc, rpc_url
 
 KEEP = (PUMP, PUMPSWAP)
+
+
+def parse_keep(raw: bytes | None) -> tuple[int | None, int, list[dict]] | None:
+    """Worker: parse one raw getBlock body and keep the venue transactions."""
+    if raw is None:
+        return None
+    b = orjson.loads(raw).get("result")
+    if b is None:
+        return None
+    return b.get("blockTime"), len(b.get("transactions") or ()), keep_txs(b)
 
 
 def keep_txs(block: dict) -> list[dict]:
@@ -35,25 +48,32 @@ def keep_txs(block: dict) -> list[dict]:
 
 async def pull(start: int, n: int, out: Path, chunk: int = 500) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    async with Rpc(rpc_url(), concurrency=24) as rpc:
+    loop = asyncio.get_running_loop()
+    pool = ProcessPoolExecutor(6)
+
+    async def one(rpc: Rpc, s: int):
+        raw = await rpc.block(s, raw=True)
+        return await loop.run_in_executor(pool, parse_keep, raw)
+
+    async with Rpc(rpc_url(), concurrency=16) as rpc:
         for c0 in range(start, start + n, chunk):
             path = out / f"{c0}.jsonl.gz"
             if path.exists():
                 continue
             m = min(chunk, start + n - c0)
             t = time.time()
-            leaders, *blocks = await asyncio.gather(rpc.leaders(c0, m), *[rpc.block(s) for s in range(c0, c0 + m)])
+            leaders, *blocks = await asyncio.gather(rpc.leaders(c0, m), *[one(rpc, s) for s in range(c0, c0 + m)])
             tmp = path.with_suffix(".tmp")
             kept = 0
             with gzip.open(tmp, "wt") as f:
                 for j, b in enumerate(blocks):
                     if b is None:
                         continue
-                    txs = keep_txs(b)
+                    bt, n_tx, txs = b
                     kept += len(txs)
-                    f.write(json.dumps({"slot": c0 + j, "block_time": b.get("blockTime"),
+                    f.write(json.dumps({"slot": c0 + j, "block_time": bt,
                                         "leader": leaders[j] if j < len(leaders) else None,
-                                        "n_tx": len(b.get("transactions") or ()), "txs": txs}) + "\n")
+                                        "n_tx": n_tx, "txs": txs}) + "\n")
             tmp.rename(path)
             print(f"{c0} blocks={sum(b is not None for b in blocks)} kept={kept} "
                   f"{time.time() - t:.1f}s calls={rpc.n_calls} retry={rpc.n_retry}", flush=True)
