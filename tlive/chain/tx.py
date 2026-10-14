@@ -41,6 +41,7 @@ class TxFacts:
     transfers: list[tuple[str, int]] = field(default_factory=list)  # signer -> other, lamports
     router: str = ""                # top-level program that carried the swap ("" = direct)
     n_sig: int = 1
+    dontfront: bool = False         # carries a ``jitodontfront*`` account: Jito drops bundles that front it
 
 
 def account_keys(tx: dict) -> list[str]:
@@ -93,4 +94,5 @@ def facts(tx: dict, ixs: list[Ix]) -> TxFacts:
     return TxFacts(signature=sigs[0], signer=signer, keys=keys, ok=meta.get("err") is None, fee=fee,
                    priority_fee=max(fee - BASE_FEE_PER_SIG * len(sigs), 0),
                    cu_used=meta.get("computeUnitsConsumed"), cu_limit=cu_limit, cu_price=cu_price,
-                   jito_tip=jito, transfers=transfers, n_sig=len(sigs))
+                   jito_tip=jito, transfers=transfers, n_sig=len(sigs),
+                   dontfront=any(k.startswith("jitodontfront") for k in keys))
