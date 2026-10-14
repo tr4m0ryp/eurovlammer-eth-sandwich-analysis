@@ -19,6 +19,10 @@ from ..chain.swaps.model import EXACT_IN, EXACT_OUT, Swap
 from .curve import net_for_tokens, sol_for_tokens, tokens_for_net
 
 GOLD = (math.sqrt(5) - 1) / 2
+# Attacker capital per front leg. Real fronts (5 h of entity-filtered sandwiches, 2026-10-14): median
+# 0.03 SOL (buy) / 0.36 SOL (sell), p99 3.0 SOL, max 6.9 SOL. Without a cap a victim with no limit
+# "yields" whatever an attacker dumping half the pool could take, which no bot has the inventory for.
+CAPITAL_LAMPORTS = 5e9
 INF = float("inf")
 
 
@@ -96,9 +100,10 @@ def exposure(s: Swap, x: float | None = None, y: float | None = None) -> Exposur
     if s.amount is None or x <= 0 or y <= 0:
         return Exposure(sl, 0.0, 0.0, False)
     if s.is_buy:
-        f, hi = _profit_buy(s, r, x, y), 50.0 * x
-    else:
-        f, hi = _profit_sell(s, r, x, y), 0.5 * y
+        f, hi = _profit_buy(s, r, x, y), CAPITAL_LAMPORTS
+    else:   # tokens worth at most CAPITAL_LAMPORTS of curve output
+        cap = y * CAPITAL_LAMPORTS / (x - CAPITAL_LAMPORTS) if CAPITAL_LAMPORTS < x else 0.5 * y
+        f, hi = _profit_sell(s, r, x, y), min(0.5 * y, cap)
     if not f(0.0)[1]:
         return Exposure(sl, 0.0, 0.0, True)
     d_max = hi
