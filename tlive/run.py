@@ -72,7 +72,7 @@ async def main(cfg: dict) -> None:
                 slot = blk["slot"]
                 st.slots += 1
                 st.skipped += blk["skipped"]
-                df = scorer.score(blk["swaps"], slot)
+                df = scorer.score(blk["swaps"], slot, lab.bots())
                 if len(df):
                     st.swaps += len(df)
                     store.swaps(df, slot)
