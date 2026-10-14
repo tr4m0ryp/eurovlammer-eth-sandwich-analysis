@@ -91,3 +91,18 @@ and weighted back). Deployed live 2026-10-14 20:46 UTC; threshold flags 2% at 18
 
 Stable from 4 k slots to 5 h to 24 h: slippage alone is near chance, phi is the best single swap
 property, pool flow and pool attack history are the two strongest features (gain 620k / 607k).
+
+## Optimal targets (night of 2026-10-14, 18:42-21:43 UTC; research/sandwich/optimal.py)
+Gates over 78,143 risk buys: realistic 75,456 (bounded spend, slack >= 0, front fits the pool),
+profitable 63,111 (calibrated gain > p90 attacker landing cost 0.00086 SOL), optimal 6,311 (top 10%
+calibrated net gain, >= 0.0075 SOL). Calibration: isotonic log-log fit of realized profit on predicted
+gain over 2,022 single-victim sandwiches; attackers take 1.2-2.3x the prediction below 0.01 SOL
+(they also eat other flow) and only 11-27% of it above (they front-run small, not maximally).
+- Pattern 1, who: buy > 1.45 SOL and > 0.56% of market cap covers 92% of optimal targets (42%
+  precision within profitable buys). Optimal buys: median 2.96 SOL, 3.6% of MC, 53% no slippage limit.
+- Pattern 2, who gets taken: optimal targets are sandwiched 12.3% in hot pools (prior 8-slot buy flow
+  > 0.85% of the pool) vs 1.8% in quiet pools; whales > 9.9 SOL almost never (0.7% / 0%), the
+  largest gains left on the table, consistent with attackers' capital (p99 front 3 SOL).
+- Optimal targets are sandwiched less often than other profitable buys (7.4% vs 8.3%): attackers
+  select on flow and visibility, not on extractable value. Routed buys (Jupiter and two other
+  routers) 2.2-2.6% vs direct 8.1% and FLASHX 9.8%.
