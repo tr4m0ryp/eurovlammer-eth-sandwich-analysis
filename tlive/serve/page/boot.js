@@ -30,7 +30,9 @@ async function boot() {
   $("#live-t").textContent = "study data, read-only";
   $("#live").className = "live on";
   wireOptimal();
+  wireVisibility();
   loadOptimal(db).catch(() => { $("#opt-note").textContent = "Optimal data unavailable"; });
+  loadVisibility(db).catch(() => { $("#vis-note").textContent = "Visibility data unavailable"; });
   loadExposure(db).catch(() => {});
 }
 boot();

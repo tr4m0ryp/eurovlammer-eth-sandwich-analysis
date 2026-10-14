@@ -7,7 +7,9 @@ input[type="range"] { width: 200px; accent-color: var(--brand); height: 32px; ma
 .tag.sandwiched { color: var(--bad); border-color: oklch(0.43 0.17 29 / 0.35); background: var(--accent-red); }
 .tag.clean { color: var(--good); }
 .tag.pending { color: var(--tertiary); border-style: dashed; }
-.side-buy { color: var(--good); }
+.tag.vis-high { color: var(--c-up); border-color: oklch(0.55 0.15 150 / 0.35); background: oklch(0.3 0.08 150 / 0.15); }
+.tag.vis-medium { color: var(--brand); border-color: oklch(0.5 0.15 250 / 0.35); background: oklch(0.25 0.06 250 / 0.15); }
+.tag.vis-low { color: var(--tertiary); border-color: oklch(0.5 0 0 / 0.2); background: transparent; }
 .side-sell { color: var(--bad); }
 tr.new td { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: var(--brand-soft); } to { background: transparent; } }
