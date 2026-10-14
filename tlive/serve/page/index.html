@@ -22,6 +22,7 @@
       <button class="tab" role="tab" aria-selected="true" data-tab="optimal">Optimal</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="visibility">Visibility</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="exposure">Exposure</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="vis-live">Live Targets</button>
     </div>
   </header>
   <main id="main"><div class="stack">
@@ -79,6 +80,22 @@
       <div class="pager" id="vis-count"></div>
     </section>
 
+    <section class="stack" data-panel="vis-live" hidden>
+      <section class="stats" id="vis-live-stats"></section>
+      <div class="toolbar">
+        <div class="fld"><span>Show</span><div class="seg" data-v="view">
+          <button aria-pressed="true" data-v="">All visible</button><button data-v="visible">High vis only</button><button data-v="marginal">Marginal only</button></div></div>
+        <small id="vis-live-n">Waiting for visible targets</small>
+      </div>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th>Time</th><th class="num">Slot</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">Fee</th><th class="num">Slack</th>
+          <th class="num">MESP</th><th class="num">Score</th><th>Router</th><th>Tip</th><th class="num">Lag</th><th>Visibility</th><th>Tx</th>
+        </tr></thead>
+        <tbody id="vis-live-rows"></tbody>
+      </table></div>
+    </section>
+
     <section class="stack" data-panel="exposure" hidden>
       <section class="stats" id="exp-stats"></section>
       <div class="card">
@@ -95,6 +112,7 @@
     </section>
   </div></main>
 </div>
+<script src="static/app.js"></script>
 <script src="static/optimal.js"></script>
 <script src="static/visibility.js"></script>
 <script src="static/exposure.js"></script>
