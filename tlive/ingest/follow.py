@@ -41,7 +41,7 @@ def decode_block(raw: bytes | None, slot: int) -> dict:
             r = asdict(s)
             e = exposure(s)                  # screener view: the swap's own pre-state
             r.update(signer=f.signer, router=f.router, cu_price=f.cu_price, priority_fee=f.priority_fee,
-                     jito_tip=f.jito_tip, dontfront=f.dontfront, x_ref=s.x_pre, slack=e.slack, mesp=e.mesp)
+                     jito_tip=f.jito_tip, dontfront=f.dontfront, x_ref=s.x_pre, slack=e.slack, mesp=e.mesp, front_opt=e.front)
             rows.append(r)
     return {"slot": slot, "block_time": bt, "n_tx": len(b.get("transactions") or ()), "swaps": rows,
             "skipped": False}

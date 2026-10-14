@@ -104,8 +104,8 @@ async def main(cfg: dict) -> None:
                     scorer.add_front(x.pool, x.front[0].slot)
                     keys = [(v.signature, v.ev_index) for v in x.victims]
                     for v in x.victims:          # mesp_ref: priced at the pool state before the front leg
-                        ref = exposure(v, x.front[0].x_pre, x.front[0].y_pre).mesp
-                        victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit, v.slot, ref)
+                        e = exposure(v, x.front[0].x_pre, x.front[0].y_pre)
+                        victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit, v.slot, e.mesp, e.front)
                     fl = [k in flagged_at.get(v.slot, ()) for k, v in zip(keys, x.victims)]
                     st.sandwiches += 1
                     st.victims += len(keys)
