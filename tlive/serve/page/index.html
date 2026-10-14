@@ -20,6 +20,7 @@
     </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="flags">Flagged</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="risk">Risk</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="sands">Sandwiches</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="cal">Calibration</button>
     </div>
@@ -49,6 +50,22 @@
         <tbody id="flags"></tbody>
       </table></div>
       <div class="pager" id="flags-n"></div>
+    </section>
+
+    <section class="stack" data-panel="risk" hidden>
+      <section class="stats" id="risk-stats"></section>
+      <div class="toolbar">
+        <div class="fld"><span>Show</span><div class="seg" data-r="view">
+          <button aria-pressed="true" data-v="">All risk</button><button data-v="top">Top 10% gain</button><button data-v="hit">Sandwiched</button></div></div>
+      </div>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th>Time</th><th class="num">Slot</th><th>Venue</th><th>Side</th><th class="num">SOL</th><th class="num">Pool SOL</th>
+          <th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Sandwich gain SOL</th><th>Gain rank</th>
+          <th class="num">Score</th><th>Status</th><th class="num">Taken SOL</th><th>Tx</th>
+        </tr></thead>
+        <tbody id="risk"></tbody>
+      </table></div>
     </section>
 
     <section class="stack" data-panel="sands" hidden>
