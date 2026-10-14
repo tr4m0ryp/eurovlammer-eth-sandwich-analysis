@@ -70,7 +70,7 @@ class Store:
 
     def settle(self, slot: int, victims: dict[tuple[str, int], tuple]) -> None:
         """Mark flagged swaps at ``slot``: sandwiched (with attacker and profit) or clean."""
-        for (sig, ev), (key, att, prof, vslot) in victims.items():
+        for (sig, ev), (key, att, prof, vslot, *_) in victims.items():
             if vslot != slot:
                 continue
             self.db.execute("update flagged set status='sandwiched', attacker=?, sw_profit=? "
