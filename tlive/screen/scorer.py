@@ -15,7 +15,8 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from ..metrics.features import CTX_SLOTS, FEATURES, WALLET_SLOTS, base_features
+from ..metrics.features import (CTX_SLOTS, FEATURES, POOL_HIST_SLOTS, SETTLE_SLOTS, WALLET_SLOTS,
+                                base_features)
 
 
 class Context:
@@ -64,6 +65,21 @@ class Scorer:
         self.meta = json.loads(model_path.with_suffix(".json").read_text())
         self.threshold = float(self.meta["threshold"])
         self.ctx = Context()
+        self.fronts: dict[str, deque] = defaultdict(deque)      # pool -> settled front-leg slots
+
+    def add_front(self, pool: str, slot: int) -> None:
+        """A settled sandwich on ``pool`` (from the labeller, SETTLE_SLOTS behind the tip)."""
+        self.fronts[pool].append(slot)
+
+    def _pool_hist(self, df: pd.DataFrame) -> np.ndarray:
+        out = np.zeros(len(df))
+        for i, (pool, slot) in enumerate(zip(df["pool"], df["slot"])):
+            q = self.fronts.get(pool)
+            if q:
+                while q and q[0] < slot - POOL_HIST_SLOTS:
+                    q.popleft()
+                out[i] = sum(1 for f in q if f < slot - SETTLE_SLOTS)
+        return np.log10(out + 1)
 
     def score(self, rows: list[dict], slot: int, bots: set[str] = frozenset()) -> pd.DataFrame:
         """Rows of one block -> frame with features, ``p`` and ``flag``.
@@ -76,7 +92,9 @@ class Scorer:
         new = new[~new["signer"].isin(bots)].sort_values(["tx_index", "ev_index"]).reset_index(drop=True)
         if new.empty:
             return new
-        feats = pd.concat([base_features(new), self.ctx.features(new)], axis=1)[FEATURES]
+        feats = pd.concat([base_features(new), self.ctx.features(new)], axis=1)
+        feats["log_pool_hist"] = self._pool_hist(new)
+        feats = feats[FEATURES]
         new = pd.concat([new, feats], axis=1)
         new["p"] = self.model.predict(new[FEATURES])
         new["flag"] = new["p"] >= self.threshold

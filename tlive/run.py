@@ -93,6 +93,7 @@ async def main(cfg: dict) -> None:
                 for x in sands:
                     if not lab.is_bot(x.attacker):
                         continue
+                    scorer.add_front(x.pool, x.front[0].slot)
                     keys = [(v.signature, v.ev_index) for v in x.victims]
                     for v in x.victims:
                         victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit, v.slot)
