@@ -20,7 +20,7 @@ create table if not exists sandwiches (key varchar primary key, slot bigint, poo
   attacker varchar, profit double, n_victims int, n_flagged int, victim_sol bigint, seen_ms bigint);
 create table if not exists risk (signature varchar, ev_index int, slot bigint, block_time bigint,
   venue varchar, pool varchar, mint varchar, signer varchar, router varchar, is_buy boolean, sol bigint,
-  x double, fee_bps double, slack double, mesp double, mesp_ref double, mesp_best double, front_best double,
+  x double, mc_sol double, size_mc double, fee_bps double, slack double, mesp double, mesp_ref double, mesp_best double, front_best double,
   gain_pct double, gain_roi double, taken_pct double, top10_live boolean,
   phi double, p double, flag boolean, cu_price bigint, jito_tip bigint, status varchar, attacker varchar,
   sw_profit double, primary key (signature, ev_index));
@@ -103,6 +103,6 @@ FLAG_COLS = ["signature", "ev_index", "slot", "block_time", "venue", "pool", "mi
              "is_buy", "sol", "x_ref", "fee_bps", "slack", "mesp", "phi", "p", "cu_price", "jito_tip",
              "dontfront", "status", "attacker", "sw_profit", "seen_ms"]
 RISK_COLS = ["signature", "ev_index", "slot", "block_time", "venue", "pool", "mint", "signer", "router",
-             "is_buy", "sol", "x_ref", "fee_bps", "slack", "mesp", "mesp_ref", "mesp_best", "front_best",
+             "is_buy", "sol", "x_ref", "mc_sol", "size_mc", "fee_bps", "slack", "mesp", "mesp_ref", "mesp_best", "front_best",
              "gain_pct", "gain_roi", "taken_pct", "top10", "phi", "p",
              "flag", "cu_price", "jito_tip", "status", "attacker", "sw_profit"]

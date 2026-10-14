@@ -84,7 +84,7 @@ function renderSands() {
 function renderRisk() {
   const r = (S.stats || {}).risk || {};
   $("#risk-stats").innerHTML = [
-    stat("Risk swaps", fmt.int(r.n), `sandwich gain above ${r.min_sol ?? 0.00001} SOL gas`),
+    stat("Risk buys", fmt.int(r.n), `buy-side sandwich gain above ${r.min_sol ?? 0.00001} SOL gas`),
     stat("Sandwiched", fmt.pct(r.n ? r.sandwiched / r.n : null), `${fmt.int(r.sandwiched)} of ${fmt.int(r.n)} risk swaps`),
     stat("Top 10% gain", fmt.int(r.top10), r.q90_sol != null ? `gain >= ${fmt.n(r.q90_sol, 4)} SOL` : "cutoff after 50 rows"),
     stat("Gain on the table", fmt.n(r.gain_total_sol, 2) + " SOL", `median ${fmt.n(r.gain_median_sol, 4)} SOL per risk swap`),
@@ -94,8 +94,8 @@ function renderRisk() {
   $("#risk").innerHTML = rows.slice(0, MAX_ROWS).map((x) => `<tr>
     <td class="num">${fmt.time(x.block_time ? x.block_time * 1000 : Date.now())}</td><td class="num">${x.slot}</td>
     <td>${x.venue === "pump" ? "pump" : "PumpSwap"}</td>
-    <td class="${x.is_buy ? "side-buy" : "side-sell"}">${x.is_buy ? "Buy" : "Sell"}</td>
-    <td class="num">${fmt.sol(x.sol)}</td><td class="num">${fmt.sol(x.x_ref)}</td><td class="num">${fmt.int(x.fee_bps)}</td>
+    <td class="num">${fmt.sol(x.sol)}</td><td class="num">${x.mc_sol != null ? fmt.n(x.mc_sol, 1) : ""}</td>
+    <td class="num">${x.size_mc != null ? (100 * x.size_mc).toFixed(3) + "%" : ""}</td><td class="num">${fmt.int(x.fee_bps)}</td>
     <td class="num">${fmt.slack(x.slack)}</td><td class="num"><b>${fmt.n(x.mesp_best / 1e9, 4)}</b></td>
     <td class="num">${fmt.pct(x.gain_pct)}</td><td class="num">${fmt.pct(x.gain_roi)}</td>
     <td>${x.top10 ? '<span class="tag brand">top 10%</span>' : ""}</td><td class="num">${fmt.n(x.p, 3)}</td>
@@ -103,7 +103,7 @@ function renderRisk() {
     <td class="num">${x.sw_profit != null ? fmt.n(x.sw_profit / 1e9, 4) : ""}</td>
     <td class="num">${x.taken_pct != null ? fmt.pct(x.taken_pct) : ""}</td>
     <td><a class="mono" href="https://solscan.io/tx/${x.signature}" target="_blank" rel="noopener">${x.signature.slice(0, 8)}</a></td></tr>`).join("")
-    || `<tr><td colspan="17" class="muted">Risk swaps appear about 14 slots after they land, once their sandwich status is known.</td></tr>`;
+    || `<tr><td colspan="18" class="muted">Risk swaps appear about 14 slots after they land, once their sandwich status is known.</td></tr>`;
 }
 
 function renderCal() {
