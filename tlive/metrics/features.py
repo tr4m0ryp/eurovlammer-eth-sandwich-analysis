@@ -30,37 +30,47 @@ FEATURES = ["log_sol", "log_x", "f_fee_bps", "phi", "log_phi", "slack_c", "slack
             "log_cu_price", "has_tip", "log_flow_rel", "log_pool_n", "log_wallet_n", "log_pool_hist"]
 
 
+def _f(df: pd.DataFrame, col: str, fill: float = np.nan) -> np.ndarray:
+    return pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float, na_value=fill) if col in df else np.full(len(df), fill)
+
+
 def base_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Features that need only the swap and its pool state (``x_ref``, ``sol``, ``fee_bps``...)."""
-    out = pd.DataFrame(index=df.index)
-    x = df["x_ref"].astype(float).clip(lower=1.0)
-    n = df["sol"].astype(float)
-    r = df["fee_bps"].astype(float) / 1e4
-    buy = df["is_buy"].astype(bool)
-    impact = np.where(buy, (1 + n / x) ** 2 - 1, 1 - (1 - (n / x).clip(upper=0.999)) ** 2)
-    hurdle = ((1 + r) / (1 - r) - 1).clip(lower=1e-4)    # fee-free pools: a tip/gas-scale floor
-    slack = df["slack"].astype(float)
-    known = np.isfinite(slack) | np.isinf(slack)
-    slack_c = slack.where(known, np.nan).clip(upper=SLACK_CAP)
-    out["log_sol"] = np.log10(n.clip(lower=1) / 1e9)
-    out["log_x"] = np.log10(x / 1e9)
-    out["f_fee_bps"] = df["fee_bps"].astype(float)
-    out["phi"] = impact / hurdle
-    out["log_phi"] = np.log10(out["phi"].clip(lower=1e-6))
-    out["slack_c"] = slack_c.fillna(-1.0)
-    out["slack_known"] = known.astype(int)
-    room = np.minimum(slack_c.fillna(SLACK_CAP).clip(lower=0), impact) / hurdle
-    out["room"] = room
-    out["log_mesp"] = np.log10(df["mesp"].astype(float).clip(lower=1) / 1e9)
-    out["mesp_rel"] = df["mesp"].astype(float) / n.clip(lower=1)
-    out["f_buy"] = buy.astype(int)
-    out["exact_out"] = (df["kind"] == "out").astype(int)
-    out["venue_swap"] = (df["venue"] == "pumpswap").astype(int)
-    out["direct"] = (df["router"] == "").astype(int)
-    out["f_dontfront"] = df["dontfront"].astype(int) if "dontfront" in df else 0
-    out["log_cu_price"] = np.log10(df["cu_price"].astype(float).fillna(0) + 1)
-    out["has_tip"] = (df["jito_tip"].astype(float) > 0).astype(int)
-    return out
+    """Features that need only the swap and its pool state (``x_ref``, ``sol``, ``fee_bps``...).
+
+    Plain numpy, one frame built at the end: the live scorer calls this on ~45 rows per block,
+    where pandas' per-column overhead used to cost more than the arithmetic."""
+    x = np.maximum(_f(df, "x_ref"), 1.0)
+    n = _f(df, "sol")
+    fee = _f(df, "fee_bps")
+    r = fee / 1e4
+    buy = df["is_buy"].to_numpy(dtype=bool)
+    impact = np.where(buy, (1 + n / x) ** 2 - 1, 1 - (1 - np.minimum(n / x, 0.999)) ** 2)
+    hurdle = np.maximum((1 + r) / (1 - r) - 1, 1e-4)      # fee-free pools: a tip/gas-scale floor
+    slack = _f(df, "slack")
+    known = ~np.isnan(slack)
+    slack_c = np.minimum(slack, SLACK_CAP)                  # nan stays nan
+    phi = impact / hurdle
+    mesp = _f(df, "mesp")
+    out = {
+        "log_sol": np.log10(np.maximum(n, 1) / 1e9),
+        "log_x": np.log10(x / 1e9),
+        "f_fee_bps": fee,
+        "phi": phi,
+        "log_phi": np.log10(np.maximum(phi, 1e-6)),
+        "slack_c": np.where(known, slack_c, -1.0),
+        "slack_known": known.astype(int),
+        "room": np.minimum(np.maximum(np.where(known, slack_c, SLACK_CAP), 0), impact) / hurdle,
+        "log_mesp": np.log10(np.maximum(mesp, 1) / 1e9),
+        "mesp_rel": mesp / np.maximum(n, 1),
+        "f_buy": buy.astype(int),
+        "exact_out": (df["kind"].to_numpy() == "out").astype(int),
+        "venue_swap": (df["venue"].to_numpy() == "pumpswap").astype(int),
+        "direct": (df["router"].to_numpy() == "").astype(int),
+        "f_dontfront": df["dontfront"].to_numpy(dtype=bool).astype(int) if "dontfront" in df else np.zeros(len(df), int),
+        "log_cu_price": np.log10(_f(df, "cu_price", 0.0) + 1),
+        "has_tip": (_f(df, "jito_tip", 0.0) > 0).astype(int),
+    }
+    return pd.DataFrame(out, index=df.index)
 
 
 def context_features(df: pd.DataFrame) -> pd.DataFrame:
