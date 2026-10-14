@@ -17,6 +17,7 @@ recomputes it over the whole night.
 """
 from __future__ import annotations
 
+import time
 from collections import deque
 
 import numpy as np
@@ -33,6 +34,7 @@ class RiskBook:
         self.q90 = float("inf")
         self.recent: deque[dict] = deque(maxlen=recent)
         self.n = self.n_hit = self.n_top = self.n_top_hit = 0
+        self.gain_sum, self.median, self.q_at = 0.0, 0.0, 0.0
 
     def add(self, slot: int, rows: list[dict]) -> None:
         self.pending[slot] = [{k: r.get(k) for k in KEEP} for r in rows]
@@ -57,21 +59,22 @@ class RiskBook:
                 out.append(r)
         if out:
             self.mesp_all += [r["mesp_best"] for r in out]
-            if len(self.mesp_all) >= 50:
-                self.q90 = float(np.quantile(self.mesp_all, 0.9))
+            self.gain_sum += sum(r["mesp_best"] for r in out)
+            if len(self.mesp_all) >= 50 and time.time() - self.q_at > 30:   # a night holds ~1e5 rows
+                self.q_at = time.time()
+                self.q90, self.median = (float(v) for v in np.quantile(self.mesp_all, [0.9, 0.5]))
             for r in out:
                 r["top10"] = r["mesp_best"] >= self.q90
-                hit = r["status"] == "sandwiched"
+                was_hit = r["status"] == "sandwiched"
                 self.n += 1
-                self.n_hit += hit
+                self.n_hit += was_hit
                 self.n_top += r["top10"]
-                self.n_top_hit += hit and r["top10"]
+                self.n_top_hit += was_hit and r["top10"]
                 self.recent.append(r)
         return out
 
     def stats(self) -> dict:
-        g = np.array(self.mesp_all) if self.mesp_all else np.zeros(1)
-        return {"gain_total_sol": float(g.sum()) / 1e9, "gain_median_sol": float(np.median(g)) / 1e9,
+        return {"gain_total_sol": self.gain_sum / 1e9, "gain_median_sol": self.median / 1e9,
                 "n": self.n, "sandwiched": self.n_hit, "top10": self.n_top, "top10_sandwiched": self.n_top_hit,
                 "q90_sol": self.q90 / 1e9 if np.isfinite(self.q90) else None,
                 "min_sol": RISK_MIN_LAMPORTS / 1e9}
