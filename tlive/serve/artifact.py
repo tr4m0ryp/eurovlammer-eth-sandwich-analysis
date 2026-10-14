@@ -17,7 +17,7 @@ import orjson
 
 PAGE = Path(__file__).parent / "page"
 ROOT = Path(__file__).resolve().parents[2]
-N_FLAGS, N_SANDS = 150, 60
+N_FLAGS, N_SANDS, N_RISK = 120, 50, 150
 
 
 def build(out: Path = ROOT / "data" / "artifact" / "sandwich_screener.html") -> Path:
@@ -40,7 +40,8 @@ def snapshot(hub, path: Path) -> Path:
     """Write the database body for ``live/snapshot`` and announce it."""
     body = {"updated_ms": int(time.time() * 1000), "stats": hub.stats,
             "flags": list(reversed(list(hub.flags)[-N_FLAGS:])),
-            "sands": list(reversed(list(hub.sandwiches)[-N_SANDS:]))}
+            "sands": list(reversed(list(hub.sandwiches)[-N_SANDS:])),
+            "risk": list(reversed(list(hub.risk)[-N_RISK:]))}
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_bytes(orjson.dumps(body, option=orjson.OPT_SERIALIZE_NUMPY))

@@ -15,7 +15,9 @@ from pathlib import Path
 
 from .ingest.follow import Follower
 from .ingest.rpc import default_pool
+from .metrics.exposure import exposure
 from .screen import Labeler, Scorer
+from .screen.risk import RiskBook
 from .serve import Hub, serve
 from .serve.artifact import snapshot
 from .store import Store
@@ -67,6 +69,7 @@ async def main(cfg: dict) -> None:
     flagged_at: dict[int, set] = {}
     scored_at: dict[int, list] = {}
     victims: dict[tuple[str, int], tuple] = {}      # every victim seen; a front can precede its victim
+    risk = RiskBook()
     last_push = 0.0
     push_path = store.dir / "push" / "snapshot.json"
     async with default_pool() as pool:
@@ -93,14 +96,16 @@ async def main(cfg: dict) -> None:
                     st.flags += len(rows)
                     flagged_at[slot] = {(r["signature"], r["ev_index"]) for r in rows}
                     scored_at[slot] = list(zip(zip(df.signature, df.ev_index), df.p.astype(float)))
+                    risk.add(slot, [{k: _clean(v) for k, v in r.items()} for r in df.to_dict("records")])
                 settled, sands = lab.push(slot, blk["swaps"])
                 for x in sands:
                     if not lab.is_bot(x.attacker):
                         continue
                     scorer.add_front(x.pool, x.front[0].slot)
                     keys = [(v.signature, v.ev_index) for v in x.victims]
-                    for v in x.victims:
-                        victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit, v.slot)
+                    for v in x.victims:          # mesp_ref: priced at the pool state before the front leg
+                        ref = exposure(v, x.front[0].x_pre, x.front[0].y_pre).mesp
+                        victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit, v.slot, ref)
                     fl = [k in flagged_at.get(v.slot, ()) for k, v in zip(keys, x.victims)]
                     st.sandwiches += 1
                     st.victims += len(keys)
@@ -122,9 +127,12 @@ async def main(cfg: dict) -> None:
                     st.calibrate(scored_at.pop(s), victims)
                 for k in [k for k, v in victims.items() if v[3] < settled - 64]:
                     del victims[k]
+                settled_risk = risk.settle(settled, victims)
+                store.risk(settled_risk)
+                hub.add_risk(settled_risk)
                 store.settle(settled, victims)
                 hub.settle(settled, victims)
-                hub.stats = st.view(f, scorer, lab, slot)
+                hub.stats = st.view(f, scorer, lab, slot) | {"risk": risk.stats()}
                 hub.publish("stats", hub.stats)
                 if time.time() - last_push >= PUSH_EVERY_S:
                     last_push = time.time()
