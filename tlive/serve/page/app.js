@@ -191,13 +191,15 @@ function wire() {
 async function bootArtifact() {
   render();
   const db = await window.claude.use("db");
-  if (!db) { $("#live-t").textContent = "sign in to claude.ai to see the live feed"; return; }
+  if (!db) { $("#live-t").textContent = "sign in to claude.ai to see the data"; return; }
+  wireNight();
+  loadNight(db).catch(() => { $("#night-note").textContent = "Night data unavailable"; });
   let updated = 0;
   const tick = () => {
     if (!updated) return;
     const age = Math.round((Date.now() - updated) / 1000);
     $("#live").className = "live " + (age < 180 ? "on" : "off");
-    $("#live-t").textContent = age < 180 ? `live, updated ${age}s ago` : `screener offline since ${fmt.time(updated)} UTC`;
+    $("#live-t").textContent = age < 180 ? `live, updated ${age}s ago` : `screener stopped ${fmt.time(updated)} UTC`;
   };
   setInterval(tick, 1000);
   db.doc("live/snapshot").onSnapshot((snap) => {

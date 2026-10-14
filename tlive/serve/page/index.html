@@ -19,16 +19,41 @@
       <span class="live" id="live"><i></i><span id="live-t">connecting</span></span>
     </div>
     <div class="tabs" role="tablist">
-      <button class="tab" role="tab" aria-selected="true" data-tab="flags">Flagged</button>
+      <button class="tab" role="tab" aria-selected="true" data-tab="night">Night</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="flags">Flagged</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="risk">Risk</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="sands">Sandwiches</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="cal">Calibration</button>
     </div>
   </header>
   <main id="main"><div class="stack">
-    <section class="stats" id="stats"></section>
+    <section class="stack" data-panel="night">
+      <section class="stats" id="night-stats"></section>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Sandwiched share by buy size relative to market cap</h2><small>deciles of risk buys; label = decile floor, % of MC</small></div>
+        <div class="bars" id="night-deciles"></div>
+      </div>
+      <div class="toolbar">
+        <div class="fld"><span>Show</span><div class="seg" data-n="view">
+          <button aria-pressed="true" data-v="">All risk</button><button data-v="top">Top 10% gain</button><button data-v="hit">Sandwiched</button></div></div>
+        <div class="fld"><span>Sort by</span><div class="seg" data-n="sort">
+          <button aria-pressed="true" data-v="gain">Gain</button><button data-v="size">% of MC</button><button data-v="score">Score</button><button data-v="time">Newest</button></div></div>
+        <small id="night-note">Loading the night's data</small>
+      </div>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th>Time</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">MC SOL</th><th class="num">% of MC</th>
+          <th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Gain SOL</th><th class="num">Gain % of trade</th>
+          <th class="num">Return on front-run</th><th>Gain rank</th><th>Status</th><th class="num">Taken SOL</th><th class="num">Score</th><th>Tx</th>
+        </tr></thead>
+        <tbody id="night-rows"></tbody>
+      </table></div>
+      <div class="pager" id="night-count"></div>
+    </section>
 
-    <section class="stack" data-panel="flags">
+    <section class="stats" id="stats" data-panel="flags" hidden></section>
+
+    <section class="stack" data-panel="flags" hidden>
       <div class="toolbar">
         <label class="fld"><span>Min score <b class="num" id="pmin-v"></b></span>
           <input type="range" id="pmin" min="0" max="1" step="0.01"></label>
@@ -90,6 +115,7 @@
     </section>
   </div></main>
 </div>
+<script src="static/night.js"></script>
 <script src="static/app.js"></script>
 </body>
 </html>
