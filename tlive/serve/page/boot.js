@@ -11,6 +11,10 @@ const fmt = {
   time: (ms) => new Date(ms).toISOString().slice(11, 19),
 };
 
+function stat(label, v, s) {
+  return `<div class="stat"><div class="lbl">${label}</div><div class="v">${v}</div><div class="s">${s || ""}</div></div>`;
+}
+
 function wireTabs() {
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === b));
