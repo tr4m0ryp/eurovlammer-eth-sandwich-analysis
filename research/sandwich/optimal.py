@@ -49,7 +49,7 @@ def build() -> None:
     con.execute("create or replace table optimal_calibration (log10_pred double, log10_real double)")
     con.executemany("insert into optimal_calibration values (?, ?)", [[g, float(iso.predict([g])[0])] for g in grid])
     con.execute("""create or replace temp table cand as select r.*, s.kind, s.ix_name, s.dontfront, s.phi,
-        s.log_flow_rel, s.log_pool_n, s.log_wallet_n, s.log_pool_hist, s.priority_fee, s.amount, s."limit"
+        s.log_flow_rel, s.log_pool_n, s.log_wallet_n, s.priority_fee, s.amount, s."limit", s.user, s.tx_index
         from risk r left join (select distinct on (signature, ev_index) * from swaps) s using (signature, ev_index)""")
     df = con.execute("select signature, ev_index, mesp_best from cand").df()
     ok = df.mesp_best.fillna(0) > 0
