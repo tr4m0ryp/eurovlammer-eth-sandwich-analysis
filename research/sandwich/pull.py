@@ -19,7 +19,7 @@ from pathlib import Path
 import orjson
 
 from tlive.chain.programs import PUMP, PUMPSWAP
-from tlive.ingest.rpc import Rpc, rpc_url
+from tlive.ingest.rpc import default_pool
 
 KEEP = (PUMP, PUMPSWAP)
 
@@ -46,16 +46,16 @@ def keep_txs(block: dict) -> list[dict]:
     return out
 
 
-async def pull(start: int, n: int, out: Path, chunk: int = 500) -> None:
+async def pull(start: int, n: int, out: Path, chunk: int = 200) -> None:
     out.mkdir(parents=True, exist_ok=True)
     loop = asyncio.get_running_loop()
     pool = ProcessPoolExecutor(6)
 
-    async def one(rpc: Rpc, s: int):
+    async def one(rpc, s: int):
         raw = await rpc.block(s, raw=True)
         return await loop.run_in_executor(pool, parse_keep, raw)
 
-    async with Rpc(rpc_url(), concurrency=16) as rpc:
+    async with default_pool() as rpc:
         for c0 in range(start, start + n, chunk):
             path = out / f"{c0}.jsonl.gz"
             if path.exists():
@@ -89,10 +89,10 @@ def main() -> None:
     async def run():
         end = a.end
         if not end:
-            async with Rpc(rpc_url()) as rpc:
+            async with default_pool() as rpc:
                 end = await rpc.slot() - 200
         start = end - a.slots
-        start -= start % 500
+        start -= start % 200
         await pull(start, a.slots, a.out)
     asyncio.run(run())
 
