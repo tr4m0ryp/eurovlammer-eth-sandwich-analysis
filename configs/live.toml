@@ -1,7 +1,7 @@
 # trenches-live screener run. Secrets never live here: Alchemy's URL comes from ALCHEMY_RPC_URL.
 [run]
 out_dir = "data/live"
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 8765
 
 [model]
