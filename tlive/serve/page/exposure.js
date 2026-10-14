@@ -6,10 +6,12 @@ async function loadExposure(db) {
   const snap = await db.doc("exposure/summary").get();
   if (!snap.exists) return;
   const s = snap.data();
+  const best = s.shields.reduce((a, b) => ((b.drop ?? -1) > (a.drop ?? -1) ? b : a));
+  const short = { "Routed through an aggregator": "Routing", "Protected submission (Jito tip)": "Jito tip" };
   $("#exp-stats").innerHTML = [
     stat("Optimal targets", fmt.int(s.n_optimal), "the night's most extractable buys"),
     stat("Attacked overall", fmt.pct(s.base_rate), "share actually sandwiched"),
-    stat("Best protection", "Routing", `cut the attacked rate ${fmt.pct(s.shields[2].drop)}`),
+    stat("Best protection", short[best.label] || best.label, `cut the attacked rate ${fmt.pct(best.drop)}`),
   ].join("");
   $("#exp-shield").innerHTML = s.shields.map((r) => {
     const good = r.drop != null && r.drop > 0;
@@ -19,6 +21,7 @@ async function loadExposure(db) {
   }).join("");
   const f = s.flow || [];
   const max = Math.max(...f.map((x) => x.attacked), 1e-6);
+  $("#exp-flow").style.gridTemplateColumns = `repeat(${f.length || 1}, minmax(0, 1fr))`;
   $("#exp-flow").innerHTML = f.map((x) => `<div class="bar" title="${fmt.int(x.n)} buys">
     <div class="v">${(100 * x.attacked).toFixed(1)}%</div><div class="col" style="height:${(100 * x.attacked) / max}%"></div>
     <div class="x">${x.band.slice(2)}</div></div>`).join("");
