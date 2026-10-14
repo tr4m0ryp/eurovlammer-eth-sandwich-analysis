@@ -65,9 +65,14 @@ def build() -> None:
         from cand c join calib k using (signature, ev_index)""")
     con.execute("alter table optimal add column qualified boolean")
     con.execute("update optimal set qualified = realistic and sandwichable and profitable")
-    q90 = con.execute("select quantile_cont(net_real, 0.9) from optimal where qualified").fetchone()[0]
-    con.execute("alter table optimal add column optimal boolean")
-    con.execute(f"update optimal set optimal = qualified and net_real >= {q90}")
+    # the isotonic map is a step function, so net gains tie in plateaus: rank by calibrated net gain,
+    # break ties on the raw predicted gain, and keep exactly the top 10% of qualified rows
+    n_q = con.execute("select count(*) from optimal where qualified").fetchone()[0]
+    con.execute(f"""create or replace table optimal as select o.*, coalesce(k.rk <= {n_q // 10}, false) as optimal,
+        k.rk as optimal_rank from optimal o left join (select signature, ev_index,
+        row_number() over (order by net_real desc, mesp_best desc) rk from optimal where qualified) k
+        using (signature, ev_index)""")
+    q90 = con.execute("select min(net_real) from optimal where optimal").fetchone()[0]
     print(f"calibration on {n_cal} single-victim sandwiches; attacker cost p90 {cost / 1e9:.6f} SOL")
     print(con.execute("""select count(*) risk, sum(realistic::int) realistic, sum(qualified::int) qualified,
         sum(optimal::int) optimal, round(avg((status='sandwiched')::int) filter (where optimal), 3) optimal_hit_rate,
