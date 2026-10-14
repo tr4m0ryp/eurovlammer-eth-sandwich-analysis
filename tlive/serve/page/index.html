@@ -20,6 +20,7 @@
     </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="optimal">Optimal</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="visibility">Visibility</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="exposure">Exposure</button>
     </div>
   </header>
@@ -54,6 +55,30 @@
       <div class="pager" id="opt-count"></div>
     </section>
 
+    <section class="stack" data-panel="visibility" hidden>
+      <section class="stats" id="vis-stats"></section>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Visibility breakdown</h2><small>what determines whether an attacker sees a buy before it lands</small></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Route</th><th>Submission</th><th>Pool momentum</th><th class="num">Optimal buys</th><th class="num">Sandwiched</th><th class="num">Net gain, SOL</th><th>Visibility</th></tr></thead><tbody id="vis-detail"></tbody></table></div>
+      </div>
+      <div class="toolbar">
+        <div class="fld"><span>Show</span><div class="seg" data-v="view">
+          <button aria-pressed="true" data-v="">All visible</button><button data-v="hit">Sandwiched</button><button data-v="missed">Missed</button><button data-v="high">High vis only</button><button data-v="medium">Medium vis only</button></div></div>
+        <div class="fld"><span>Sort by</span><div class="seg" data-v="sort">
+          <button aria-pressed="true" data-v="rank">Net gain</button><button data-v="size">% of MC</button><button data-v="buy">Buy size</button><button data-v="time">Newest</button></div></div>
+        <small id="vis-note">Loading visibility data</small>
+      </div>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th class="num">Rank</th><th>Time</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">MC SOL</th><th class="num">% of MC</th>
+          <th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Calibrated gain</th><th class="num">Net gain</th>
+          <th>Pool</th><th>Route</th><th>Submit</th><th>Visibility</th><th>Status</th><th class="num">Taken SOL</th><th>Tx</th>
+        </tr></thead>
+        <tbody id="vis-rows"></tbody>
+      </table></div>
+      <div class="pager" id="vis-count"></div>
+    </section>
+
     <section class="stack" data-panel="exposure" hidden>
       <section class="stats" id="exp-stats"></section>
       <div class="card">
@@ -71,6 +96,7 @@
   </div></main>
 </div>
 <script src="static/optimal.js"></script>
+<script src="static/visibility.js"></script>
 <script src="static/exposure.js"></script>
 <script src="static/boot.js"></script>
 </body>
