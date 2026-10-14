@@ -1,7 +1,7 @@
 """Venue decoders and the one entry point that turns a block transaction into swaps."""
 from __future__ import annotations
 
-from ..programs import PUMP, PUMPSWAP
+from ..programs import PUMP, PUMPSWAP, WSOL
 from ..tx import TxFacts, account_keys, facts, walk
 from . import pump, pumpswap
 from .model import EXACT_IN, EXACT_OUT, Swap
@@ -21,9 +21,23 @@ def decode_tx(tx: dict, slot: int, tx_index: int, block_time: int | None = None)
     if not f.ok:
         return f, []
     swaps = pump.decode(ixs, f.signature, slot, tx_index) + pumpswap.decode(ixs, f.signature, slot, tx_index)
+    budget = spend_budget(tx, f.signer)
     for k, s in enumerate(swaps):
         s.ev_index, s.block_time = k, block_time
+        if s.is_buy and s.kind == EXACT_OUT and s.limit is not None and budget is not None:
+            s.limit = min(s.limit, budget)    # "no limit" (u64 max) still cannot outspend the wallet
     return f, swaps
+
+
+def spend_budget(tx: dict, signer: str) -> int | None:
+    """Most lamports the signer could pay: SOL plus wrapped-SOL held before the transaction."""
+    meta = tx.get("meta") or {}
+    pre = meta.get("preBalances") or []
+    if not pre:
+        return None
+    wsol = sum(int(b["uiTokenAmount"]["amount"]) for b in meta.get("preTokenBalances") or ()
+               if b.get("owner") == signer and b.get("mint") == WSOL)
+    return int(pre[0]) + wsol
 
 
 __all__ = ["EXACT_IN", "EXACT_OUT", "Swap", "decode_tx"]
