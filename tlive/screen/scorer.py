@@ -96,7 +96,7 @@ class Scorer:
         feats["log_pool_hist"] = self._pool_hist(new)
         feats = feats[FEATURES]
         new = pd.concat([new, feats], axis=1)
-        new["p"] = self.model.predict(new[FEATURES])
+        new["p"] = self.model.predict(new[FEATURES], num_threads=1)   # ~45 rows: threads cost 5x
         new["flag"] = new["p"] >= self.threshold
         self.ctx.gc(slot)
         return new
