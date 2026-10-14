@@ -1,4 +1,4 @@
-// Page boot for both local and artifact mode. Delegates to app.js for the local live page.
+// Page boot for both local and artifact mode: study tabs from a document store, live tab from app.js.
 "use strict";
 const $ = (s) => document.querySelector(s);
 
@@ -23,12 +23,20 @@ function wireTabs() {
   }));
 }
 
-async function bootArtifact() {
-  wireTabs();
-  const db = await window.claude.use("db");
-  if (!db) { $("#live-t").textContent = "sign in to claude.ai to load the study"; return; }
-  $("#live-t").textContent = "study data, read-only";
-  $("#live").className = "live on";
+// Local mode: the same documents the artifact reads, served from data/artifact by the local server.
+const localDb = {
+  doc: (id) => ({
+    get: async () => {
+      const r = await fetch("api/doc/" + id);
+      if (r.status === 404) return { exists: false, data: () => null };
+      if (!r.ok) throw new Error(id + ": HTTP " + r.status);
+      const body = await r.json();
+      return { exists: true, data: () => body };
+    },
+  }),
+};
+
+function loadStudy(db) {
   wireOptimal();
   wireVisibility();
   loadOptimal(db).catch(() => { $("#opt-note").textContent = "Optimal data unavailable"; });
@@ -38,9 +46,17 @@ async function bootArtifact() {
 
 async function boot() {
   wireTabs();
-  if (window.claude && window.claude.use) return bootArtifact();
-  // Local live page: app.js handles the rest
-  if (typeof bootLocal === "function") bootLocal();
+  wireLive();
+  if (window.claude && window.claude.use) {
+    const db = await window.claude.use("db");
+    if (!db) { $("#live-t").textContent = "sign in to claude.ai to load the study"; return; }
+    $("#live-t").textContent = "study data, read-only";
+    loadStudy(db);
+    liveArtifact(db);
+    return;
+  }
+  loadStudy(localDb);
+  liveLocal();
 }
 
 boot();
