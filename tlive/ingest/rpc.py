@@ -92,3 +92,57 @@ class Rpc:
 
     async def leaders(self, start: int, limit: int) -> list[str]:
         return await self.call("getSlotLeaders", [start, limit]) or []
+
+
+class RpcPool:
+    """Several paced endpoints behind one ``block``/``leaders``/``slot`` surface.
+
+    Each request goes to the endpoint whose pacing clock frees up first, so the pool runs at
+    roughly the sum of the endpoints' rates; a failing endpoint falls through to the next."""
+
+    def __init__(self, specs: list[tuple[str, float]], concurrency: int = 6):
+        self.rpcs = [Rpc(url, concurrency=concurrency, rps=rps) for url, rps in specs]
+
+    async def __aenter__(self) -> "RpcPool":
+        for r in self.rpcs:
+            await r.__aenter__()
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        for r in self.rpcs:
+            await r.__aexit__(*exc)
+
+    @property
+    def n_calls(self) -> int:
+        return sum(r.n_calls for r in self.rpcs)
+
+    @property
+    def n_retry(self) -> int:
+        return sum(r.n_retry for r in self.rpcs)
+
+    async def _try(self, fn: str, *args, **kw):
+        order = sorted(self.rpcs, key=lambda r: r.next_t)
+        err: Exception | None = None
+        for r in order:
+            try:
+                return await getattr(r, fn)(*args, **kw)
+            except RuntimeError as e:
+                err = e
+        raise err
+
+    async def block(self, slot: int, raw: bool = False):
+        return await self._try("block", slot, raw=raw)
+
+    async def leaders(self, start: int, limit: int) -> list[str]:
+        return await self._try("leaders", start, limit)
+
+    async def slot(self, commitment: str = "confirmed") -> int:
+        return await self._try("slot", commitment)
+
+
+def default_pool() -> RpcPool:
+    """Alchemy (from the env) plus the two public endpoints that serve full blocks."""
+    specs = [("https://solana-rpc.publicnode.com", 5.0), ("https://api.mainnet-beta.solana.com", 3.0)]
+    if os.environ.get("ALCHEMY_RPC_URL"):
+        specs.insert(0, (os.environ["ALCHEMY_RPC_URL"], 5.0))
+    return RpcPool(specs)
