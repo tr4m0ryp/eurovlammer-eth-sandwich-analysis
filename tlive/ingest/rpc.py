@@ -21,10 +21,14 @@ def rpc_url(env: str = "ALCHEMY_RPC_URL") -> str:
 
 
 class Rpc:
-    def __init__(self, url: str, concurrency: int = 16, timeout_s: float = 60.0):
+    """Paced client. A 429 costs an exponential backoff; pacing below the limit costs nothing."""
+
+    def __init__(self, url: str, concurrency: int = 16, timeout_s: float = 60.0, rps: float = 18.0):
         self.url = url
         self.sem = asyncio.Semaphore(concurrency)
         self.timeout = aiohttp.ClientTimeout(total=timeout_s)
+        self.gap = 1.0 / rps
+        self.next_t = 0.0
         self.session: aiohttp.ClientSession | None = None
         self.n_calls = self.n_retry = 0
         self.last_error: Any = None
@@ -38,26 +42,36 @@ class Rpc:
         if self.session:
             await self.session.close()
 
-    async def call(self, method: str, params: list, retries: int = 6, raw: bool = False) -> Any:
+    async def _pace(self) -> None:
+        now = asyncio.get_running_loop().time()
+        wait = self.next_t - now
+        self.next_t = max(now, self.next_t) + self.gap
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    async def call(self, method: str, params: list, retries: int = 8, raw: bool = False) -> Any:
         """Result of one call. A JSON-RPC error with a skipped-slot code returns None.
 
         ``raw`` returns the undecoded body for callers that parse off the event loop (a full
-        block is ~3 MB of JSON; parsing it here starves every other request into a timeout)."""
+        block is ~3 MB of JSON; parsing it on the loop starves every other request)."""
         body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
         for attempt in range(retries):
             async with self.sem:
+                await self._pace()
                 self.n_calls += 1
                 try:
                     async with self.session.post(self.url, json=body) as r:
+                        if r.status == 429:
+                            self.next_t += 1.0
                         if r.status == 429 or r.status >= 500:
                             raise aiohttp.ClientResponseError(r.request_info, (), status=r.status)
                         payload = await r.read()
                 except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                     self.n_retry += 1
-                    self.last_error = repr(e)
-                    await asyncio.sleep(0.5 * 2 ** attempt)
+                    self.last_error = repr(e)[:200]
+                    await asyncio.sleep(min(0.5 * 2 ** attempt, 20))
                     continue
-            if raw and payload[:400].find(b'"error"') < 0:
+            if raw and payload.find(b'"error"', 0, 400) < 0:
                 return payload
             data = orjson.loads(payload)
             err = data.get("error")
@@ -67,7 +81,7 @@ class Rpc:
                 return None
             self.n_retry += 1
             self.last_error = err
-            await asyncio.sleep(0.5 * 2 ** attempt)
+            await asyncio.sleep(min(0.5 * 2 ** attempt, 20))
         raise RuntimeError(f"{method} failed after {retries} attempts: {self.last_error}")
 
     async def slot(self, commitment: str = "confirmed") -> int:
