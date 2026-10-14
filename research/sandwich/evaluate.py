@@ -28,11 +28,15 @@ PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=15, min_data_in
               verbose=-1, seed=7, num_threads=2)
 
 
-def load(path: Path, view: str) -> pd.DataFrame:
+def load(path: Path, view: str, neg_frac: float = 1.0) -> pd.DataFrame:
     df = pd.read_parquet(path)
+    if neg_frac < 1.0:      # memory: keep every positive, a seeded share of negatives (weighted back)
+        keep = (df.role != "") | (np.random.default_rng(7).random(len(df)) < neg_frac)
+        df = df[keep]
     bots = set(df.loc[df.bot & df.role.isin(["front", "back"]), "attacker"])
     df = df[df.role.isin(["", "victim"]) & ~df.signer.isin(bots)].copy()
     df["y"] = ((df.role == "victim") & df.bot).astype(int)
+    df["w"] = np.where(df.y == 1, 1.0, 1.0 / neg_frac)
     if view == "screener":
         df["x_ref"], df["slack"], df["mesp"] = df.x_pre, df.slack_exec, df.mesp_exec
     df = df.sort_values(["slot", "tx_index", "ev_index"]).reset_index(drop=True)
@@ -73,7 +77,7 @@ def route_oof(train: pd.DataFrame, k: int = 5) -> np.ndarray:
 
 
 def gbm(train: pd.DataFrame, test: pd.DataFrame, cols: list[str], rounds: int = 400):
-    m = lgb.train(PARAMS, lgb.Dataset(train[cols], train.y), rounds)
+    m = lgb.train(PARAMS, lgb.Dataset(train[cols], train.y, weight=train.get("w")), rounds)
     return m.predict(test[cols]), m
 
 
@@ -104,7 +108,9 @@ def run(df: pd.DataFrame) -> tuple[pd.DataFrame, lgb.Booster]:
     for name, s in scores.items():
         p1, r1 = topk(y, s, 0.01)
         p5, r5 = topk(y, s, 0.05)
-        rows.append({"score": name, "auc": roc_auc_score(y, s), "ap": average_precision_score(y, s),
+        w = te.w.to_numpy()
+        rows.append({"score": name, "auc": roc_auc_score(y, s, sample_weight=w),
+                     "ap": average_precision_score(y, s, sample_weight=w),
                      "prec@1%": p1, "rec@1%": r1, "prec@5%": p5, "rec@5%": r5})
     res = pd.DataFrame(rows)
     res.attrs.update(n_train=len(tr), n_test=len(te), pos_train=int(tr.y.sum()), pos_test=int(y.sum()),
@@ -144,10 +150,12 @@ def main() -> None:
     ap.add_argument("--min-sol", type=float, default=0.0)
     ap.add_argument("--save", type=Path, default=None, help="write the screener-view model here")
     ap.add_argument("--flag-share", type=float, default=0.02, help="share of test swaps the threshold flags")
+    ap.add_argument("--views", default="attacker,screener")
+    ap.add_argument("--neg-frac", type=float, default=1.0, help="share of negatives kept (weighted back)")
     a = ap.parse_args()
     pd.set_option("display.width", 200)
-    for view in ("attacker", "screener"):
-        df = load(a.labels, view)
+    for view in a.views.split(","):
+        df = load(a.labels, view, a.neg_frac)
         df = df[df.sol >= a.min_sol * 1e9]
         res, model = run(df)
         print(f"\n[{view}] {json.dumps(res.attrs)}")
