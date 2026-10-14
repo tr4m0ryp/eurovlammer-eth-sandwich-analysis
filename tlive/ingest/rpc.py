@@ -144,7 +144,13 @@ class RpcPool:
 
 
 def default_pool() -> RpcPool:
-    """Alchemy (from the env) plus the public endpoint that serves full blocks."""
+    """Alchemy (from the env) plus the public endpoint that serves full blocks.
+
+    ``TL_RPC_SPECS="url=rps,url=rps"`` replaces the set (the AWS pull workers use publicnode only:
+    its limit is per IP, Alchemy's is per key)."""
+    env = os.environ.get("TL_RPC_SPECS")
+    if env:
+        return RpcPool([(u, float(r)) for u, r in (x.rsplit("=", 1) for x in env.split(","))])
     specs = [("https://solana-rpc.publicnode.com", 7.0)]   # api.mainnet-beta 429s every getBlock
     if os.environ.get("ALCHEMY_RPC_URL"):
         specs.insert(0, (os.environ["ALCHEMY_RPC_URL"], 7.0))
