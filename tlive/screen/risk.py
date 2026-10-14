@@ -1,6 +1,6 @@
 """The risk book: every swap that could theoretically be sandwiched, settled against real attacks.
 
-A swap is **risk** when its own limit admits a profitable sandwich: the slack-capped maximum
+A swap is **risk** when it is a buy (the attacker buys before it and sells after) and its own limit admits a profitable sandwich: the slack-capped maximum
 extractable sandwich profit (MESP, exact constant-product math, the pool's fee paid on both legs)
 exceeds ``RISK_MIN_LAMPORTS``, the base fee of the attacker's two transactions. MESP is measured at
 the swap's own pre-state and, for a real victim, again at the pool state just before the front leg
@@ -23,8 +23,9 @@ from collections import deque
 import numpy as np
 
 RISK_MIN_LAMPORTS = 10_000
+SUPPLY_BASE_UNITS = 1e15        # 1e9 tokens x 1e6 decimals: pump.fun and PumpSwap coins alike
 KEEP = ("signature", "ev_index", "slot", "block_time", "venue", "pool", "mint", "signer", "router",
-        "is_buy", "sol", "x_ref", "fee_bps", "slack", "mesp", "front_opt", "phi", "p", "flag", "cu_price", "jito_tip")
+        "is_buy", "sol", "x_ref", "y_pre", "fee_bps", "slack", "mesp", "front_opt", "phi", "p", "flag", "cu_price", "jito_tip")
 
 
 class RiskBook:
@@ -37,7 +38,9 @@ class RiskBook:
         self.gain_sum, self.median, self.q_at = 0.0, 0.0, 0.0
 
     def add(self, slot: int, rows: list[dict]) -> None:
-        self.pending[slot] = [{k: r.get(k) for k in KEEP} for r in rows]
+        """Buys only: 91% of real attacks front-run a buy (buy before, sell after); a sell-side
+        sandwich needs token inventory the attacker rarely holds."""
+        self.pending[slot] = [{k: r.get(k) for k in KEEP} for r in rows if r.get("is_buy")]
 
     def settle(self, settled: int, victims: dict) -> list[dict]:
         """Rows of every slot <= ``settled`` that qualify as risk, with status and top-10% mark."""
@@ -51,6 +54,8 @@ class RiskBook:
                     continue
                 front = hit[5] if hit and (ref or 0) >= (r["mesp"] or 0) else (r["front_opt"] or 0.0)
                 sol = r["sol"] or 0
+                mc = (r["x_ref"] / r["y_pre"]) * SUPPLY_BASE_UNITS if r.get("y_pre") else None
+                r.update(mc_sol=mc / 1e9 if mc else None, size_mc=sol / mc if mc else None)
                 r.update(mesp_ref=ref, mesp_best=best, front_best=front,
                          gain_pct=best / sol if sol else None,              # of the victim's trade
                          gain_roi=best / front if front else None,          # on the front-run capital
