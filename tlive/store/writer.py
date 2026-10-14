@@ -37,6 +37,8 @@ class Store:
     def __init__(self, run_dir: Path, meta: dict):
         self.dir = run_dir
         (run_dir / "swaps").mkdir(parents=True, exist_ok=True)
+        (run_dir / "risk").mkdir(parents=True, exist_ok=True)
+        self.risk_buf: list[dict] = []
         (run_dir / f"manifest_{int(time.time())}.json").write_text(json.dumps(meta, indent=1))
         self.db = duckdb.connect(str(run_dir / "live.duckdb"), config={"memory_limit": "1GB", "threads": 2})
         self.db.execute(SCHEMA)
@@ -64,9 +66,19 @@ class Store:
 
     def risk(self, rows: list[dict]) -> None:
         """Insert settled risk rows (final status, written once)."""
+        self.risk_buf += rows
+        if len(self.risk_buf) >= 2000:
+            self.flush_risk()
         if rows:
             self.db.executemany("insert or ignore into risk values (" + ",".join("?" * len(RISK_COLS)) + ")",
                                 [[r.get(k) for k in RISK_COLS] for r in rows])
+
+    def flush_risk(self) -> None:
+        """Risk rows also go to ``risk/<first slot>.parquet``: readable while the screener holds the db."""
+        if self.risk_buf:
+            df = pd.DataFrame([{k: r.get(k) for k in RISK_COLS} for r in self.risk_buf])
+            df.to_parquet(self.dir / "risk" / f"{int(df.slot.min())}.parquet", index=False)
+        self.risk_buf = []
 
     def settle(self, slot: int, victims: dict[tuple[str, int], tuple]) -> None:
         """Mark flagged swaps at ``slot``: sandwiched (with attacker and profit) or clean."""
@@ -83,6 +95,7 @@ class Store:
 
     def close(self) -> None:
         self.flush()
+        self.flush_risk()
         self.db.close()
 
 
