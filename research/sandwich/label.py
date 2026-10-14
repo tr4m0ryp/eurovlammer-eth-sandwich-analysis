@@ -35,14 +35,14 @@ def to_swaps(df: pd.DataFrame) -> list[Swap]:
     return out
 
 
-def _expo(args) -> list[tuple[float, float, float, float]]:
+def _expo(args) -> list[tuple[float, float, float, float, float]]:
     recs, xs, ys = args
     res = []
     for r, x, y in zip(recs, xs, ys):
         s = Swap(**r)
         e = exposure(s, x, y)
         e_own = exposure(s)
-        res.append((e.slack, e.mesp, e.front, e_own.slack))
+        res.append((e.slack, e.mesp, e.front, e_own.slack, e_own.mesp))
     return res
 
 
@@ -88,7 +88,7 @@ def main() -> None:
     jobs = [(recs[i:i + n], x_ref[i:i + n], y_ref[i:i + n]) for i in range(0, len(recs), n)]
     with ProcessPoolExecutor(a.workers) as ex:
         res = [t for part in ex.map(_expo, jobs) for t in part]
-    df["slack"], df["mesp"], df["front_opt"], df["slack_exec"] = map(list, zip(*res))
+    df["slack"], df["mesp"], df["front_opt"], df["slack_exec"], df["mesp_exec"] = map(list, zip(*res))
     df.to_parquet(a.out, index=False)
     print(f"swaps={len(df)} sandwiches={len(sands)} bots={len(bots)} "
           f"victims={int((df.role == 'victim').sum())} bot_victims={int(((df.role == 'victim') & df.bot).sum())}")
