@@ -22,8 +22,8 @@ import pandas as pd
 
 CTX_SLOTS = 8
 SLACK_CAP = 10.0
-FEATURES = ["log_sol", "log_x", "fee_bps", "phi", "log_phi", "slack_c", "slack_known", "room",
-            "log_mesp", "mesp_rel", "is_buy", "exact_out", "venue_swap", "direct", "dontfront",
+FEATURES = ["log_sol", "log_x", "f_fee_bps", "phi", "log_phi", "slack_c", "slack_known", "room",
+            "log_mesp", "mesp_rel", "f_buy", "exact_out", "venue_swap", "direct", "f_dontfront",
             "log_cu_price", "has_tip", "log_flow_rel", "log_pool_n", "log_wallet_n"]
 
 
@@ -41,7 +41,7 @@ def base_features(df: pd.DataFrame) -> pd.DataFrame:
     slack_c = slack.where(known, np.nan).clip(upper=SLACK_CAP)
     out["log_sol"] = np.log10(n.clip(lower=1) / 1e9)
     out["log_x"] = np.log10(x / 1e9)
-    out["fee_bps"] = df["fee_bps"].astype(float)
+    out["f_fee_bps"] = df["fee_bps"].astype(float)
     out["phi"] = impact / hurdle
     out["log_phi"] = np.log10(out["phi"].clip(lower=1e-6))
     out["slack_c"] = slack_c.fillna(-1.0)
@@ -50,11 +50,11 @@ def base_features(df: pd.DataFrame) -> pd.DataFrame:
     out["room"] = room
     out["log_mesp"] = np.log10(df["mesp"].astype(float).clip(lower=1) / 1e9)
     out["mesp_rel"] = df["mesp"].astype(float) / n.clip(lower=1)
-    out["is_buy"] = buy.astype(int)
+    out["f_buy"] = buy.astype(int)
     out["exact_out"] = (df["kind"] == "out").astype(int)
     out["venue_swap"] = (df["venue"] == "pumpswap").astype(int)
     out["direct"] = (df["router"] == "").astype(int)
-    out["dontfront"] = df["dontfront"].astype(int) if "dontfront" in df else 0
+    out["f_dontfront"] = df["dontfront"].astype(int) if "dontfront" in df else 0
     out["log_cu_price"] = np.log10(df["cu_price"].astype(float).fillna(0) + 1)
     out["has_tip"] = (df["jito_tip"].astype(float) > 0).astype(int)
     return out
