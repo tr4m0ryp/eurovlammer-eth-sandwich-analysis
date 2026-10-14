@@ -87,11 +87,38 @@ def run(df: pd.DataFrame) -> tuple[pd.DataFrame, lgb.Booster]:
     return res, model
 
 
+def save(df: pd.DataFrame, res: pd.DataFrame, path: Path, labels: Path, share: float) -> None:
+    """Threshold from the held-out split (flags ``share`` of test swaps), model refit on all rows,
+    and the entity-filtered attackers for the live labeller."""
+    cut = df.slot.quantile(0.6)
+    tr, te = df[df.slot <= cut], df[df.slot > cut]
+    p, _ = gbm(tr, te, FEATURES)
+    thr = float(np.quantile(p, 1 - share))
+    y = te.y.to_numpy()
+    hit = p >= thr
+    _, model = gbm(df, df.iloc[:1], FEATURES)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    model.save_model(str(path))
+    full = res.set_index("score").loc["GBM full"]
+    meta = {"name": "gbm_screener_v1", "labels": str(labels), "n_rows": len(df), "slots": int(df.slot.nunique()),
+            "base_rate": float(df.y.mean()), "threshold": thr, "flag_share": share,
+            "test_auc": float(full.auc), "test_ap": float(full.ap),
+            "test_precision": float(y[hit].mean()), "test_recall": float(y[hit].sum() / max(y.sum(), 1)),
+            "features": FEATURES}
+    path.with_suffix(".json").write_text(json.dumps(meta, indent=1))
+    lab = pd.read_parquet(labels, columns=["attacker", "bot"])
+    bots = sorted(set(lab.loc[lab.bot, "attacker"]))
+    (path.parent / "bots.json").write_text(json.dumps(bots))
+    print(f"saved {path} threshold={thr:.4f} precision={meta['test_precision']:.3f} "
+          f"recall={meta['test_recall']:.3f} bots={len(bots)}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--labels", type=Path, required=True)
     ap.add_argument("--min-sol", type=float, default=0.0)
     ap.add_argument("--save", type=Path, default=None, help="write the screener-view model here")
+    ap.add_argument("--flag-share", type=float, default=0.02, help="share of test swaps the threshold flags")
     a = ap.parse_args()
     pd.set_option("display.width", 200)
     for view in ("attacker", "screener"):
@@ -103,8 +130,7 @@ def main() -> None:
         imp = pd.Series(model.feature_importance("gain"), index=FEATURES).sort_values(ascending=False)
         print("gain:", ", ".join(f"{k}={v:.0f}" for k, v in imp.head(10).items()))
         if a.save and view == "screener":
-            a.save.parent.mkdir(parents=True, exist_ok=True)
-            model.save_model(str(a.save))
+            save(df, res, a.save, a.labels, a.flag_share)
 
 
 if __name__ == "__main__":
