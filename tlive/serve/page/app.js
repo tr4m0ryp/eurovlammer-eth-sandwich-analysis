@@ -9,7 +9,7 @@ const fmt = {
   n: (v, d = 2) => (v == null ? "" : Number(v).toFixed(d)),
   int: (v) => (v == null ? "" : Math.round(v).toLocaleString("en-US")),
   pct: (v) => (v == null || !isFinite(v) ? "n/a" : (100 * v).toFixed(1) + "%"),
-  slack: (v) => (v == null ? "?" : v >= 1e8 ? "none" : (100 * v).toFixed(1) + "%"),
+  slack: (v) => (v == null ? "?" : v >= 10 ? "none" : (100 * v).toFixed(1) + "%"),
   time: (ms) => new Date(ms).toISOString().slice(11, 19),
   short: (a) => (a ? a.slice(0, 4) + ".." + a.slice(-4) : "direct"),
 };
