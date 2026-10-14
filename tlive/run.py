@@ -64,6 +64,7 @@ async def main(cfg: dict) -> None:
     print(f"{run_id}: http://{cfg['run']['host']}:{cfg['run']['port']}", flush=True)
     flagged_at: dict[int, set] = {}
     scored_at: dict[int, list] = {}
+    victims: dict[tuple[str, int], tuple] = {}      # every victim seen; a front can precede its victim
     async with default_pool() as pool:
         f = Follower(pool)
         try:
@@ -89,13 +90,12 @@ async def main(cfg: dict) -> None:
                     flagged_at[slot] = {(r["signature"], r["ev_index"]) for r in rows}
                     scored_at[slot] = list(zip(zip(df.signature, df.ev_index), df.p.astype(float)))
                 settled, sands = lab.push(slot, blk["swaps"])
-                victims = {}
                 for x in sands:
                     if not lab.is_bot(x.attacker):
                         continue
                     keys = [(v.signature, v.ev_index) for v in x.victims]
                     for v in x.victims:
-                        victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit)
+                        victims[(v.signature, v.ev_index)] = (x.key, x.attacker, x.profit, v.slot)
                     fl = [k in flagged_at.get(v.slot, ()) for k, v in zip(keys, x.victims)]
                     st.sandwiches += 1
                     st.victims += len(keys)
@@ -115,6 +115,8 @@ async def main(cfg: dict) -> None:
                     st.flag_hits += sum(k in victims for k in keys)
                 for s in [s for s in scored_at if s <= settled]:
                     st.calibrate(scored_at.pop(s), victims)
+                for k in [k for k, v in victims.items() if v[3] < settled - 64]:
+                    del victims[k]
                 store.settle(settled, victims)
                 hub.settle(settled, victims)
                 hub.stats = st.view(f, scorer, lab, slot)

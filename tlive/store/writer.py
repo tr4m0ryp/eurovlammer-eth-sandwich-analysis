@@ -56,9 +56,11 @@ class Store:
             self.db.executemany("insert or ignore into flagged values (" + ",".join("?" * 24) + ")",
                                 [[r[k] for k in FLAG_COLS] for r in rows])
 
-    def settle(self, slot: int, victims: dict[tuple[str, int], tuple[str, str, float]]) -> None:
+    def settle(self, slot: int, victims: dict[tuple[str, int], tuple]) -> None:
         """Mark flagged swaps at ``slot``: sandwiched (with attacker and profit) or clean."""
-        for (sig, ev), (key, att, prof) in victims.items():
+        for (sig, ev), (key, att, prof, vslot) in victims.items():
+            if vslot != slot:
+                continue
             self.db.execute("update flagged set status='sandwiched', attacker=?, sw_profit=? "
                             "where signature=? and ev_index=?", [att, prof, sig, ev])
         self.db.execute("update flagged set status='clean' where slot<=? and status='pending'", [slot])
