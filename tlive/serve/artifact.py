@@ -30,7 +30,7 @@ def build(out: Path = ROOT / "data" / "artifact" / "sandwich_screener.html") -> 
     css += "\n.app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }\n"
     head = re.sub(r'<link rel="stylesheet" href="static/[^"]+">\s*', "", head)
     head = head.replace("</title>", "</title>\n<style>\n" + css + "</style>", 1)
-    for js in ("optimal.js", "night.js", "app.js"):
+    for js in ("optimal.js", "exposure.js", "boot.js"):
         body = body.replace(f'<script src="static/{js}"></script>', "<script>\n" + (PAGE / js).read_text() + "</script>")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(head.strip() + "\n" + body.strip() + "\n")
