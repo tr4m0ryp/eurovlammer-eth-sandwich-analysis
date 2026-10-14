@@ -2,7 +2,7 @@
 "use strict";
 const $ = (s) => document.querySelector(s);
 const MAX_ROWS = 400;
-const S = { flags: [], sands: [], stats: {}, f: { venue: "", side: "", status: "" }, pmin: null, paused: false };
+const S = { flags: [], sands: [], risk: [], rview: "", stats: {}, f: { venue: "", side: "", status: "" }, pmin: null, paused: false };
 
 const fmt = {
   sol: (l) => (l == null ? "" : (l / 1e9).toFixed(l >= 1e10 ? 1 : 3)),
@@ -81,6 +81,28 @@ function renderSands() {
     || `<tr><td colspan="9" class="muted">No sandwiches settled yet.</td></tr>`;
 }
 
+function renderRisk() {
+  const r = (S.stats || {}).risk || {};
+  $("#risk-stats").innerHTML = [
+    stat("Risk swaps", fmt.int(r.n), `sandwich gain above ${r.min_sol ?? 0.00001} SOL gas`),
+    stat("Sandwiched", fmt.pct(r.n ? r.sandwiched / r.n : null), `${fmt.int(r.sandwiched)} of ${fmt.int(r.n)} risk swaps`),
+    stat("Top 10% gain", fmt.int(r.top10), r.q90_sol != null ? `gain >= ${fmt.n(r.q90_sol, 4)} SOL` : "cutoff after 50 rows"),
+    stat("Top 10% sandwiched", fmt.pct(r.top10 ? r.top10_sandwiched / r.top10 : null), `${fmt.int(r.top10_sandwiched)} of ${fmt.int(r.top10)}`),
+  ].join("");
+  const rows = S.risk.filter((x) => !S.rview || (S.rview === "top" ? x.top10 : x.status === "sandwiched"));
+  $("#risk").innerHTML = rows.slice(0, MAX_ROWS).map((x) => `<tr>
+    <td class="num">${fmt.time(x.block_time ? x.block_time * 1000 : Date.now())}</td><td class="num">${x.slot}</td>
+    <td>${x.venue === "pump" ? "pump" : "PumpSwap"}</td>
+    <td class="${x.is_buy ? "side-buy" : "side-sell"}">${x.is_buy ? "Buy" : "Sell"}</td>
+    <td class="num">${fmt.sol(x.sol)}</td><td class="num">${fmt.sol(x.x_ref)}</td><td class="num">${fmt.int(x.fee_bps)}</td>
+    <td class="num">${fmt.slack(x.slack)}</td><td class="num"><b>${fmt.n(x.mesp_best / 1e9, 4)}</b></td>
+    <td>${x.top10 ? '<span class="tag brand">top 10%</span>' : ""}</td><td class="num">${fmt.n(x.p, 3)}</td>
+    <td><span class="tag ${x.status}">${x.status}</span></td>
+    <td class="num">${x.sw_profit != null ? fmt.n(x.sw_profit / 1e9, 4) : ""}</td>
+    <td><a class="mono" href="https://solscan.io/tx/${x.signature}" target="_blank" rel="noopener">${x.signature.slice(0, 8)}</a></td></tr>`).join("")
+    || `<tr><td colspan="14" class="muted">Risk swaps appear about 14 slots after they land, once their sandwich status is known.</td></tr>`;
+}
+
 function renderCal() {
   const c = S.stats.calibration;
   if (!c) return;
@@ -99,6 +121,7 @@ function render(fresh) {
   renderStats();
   if (!S.paused) renderFlags(fresh);
   renderSands();
+  renderRisk();
   renderCal();
 }
 
@@ -111,6 +134,9 @@ function onEvent(m) {
     const idx = new Map(S.flags.map((r) => [r.signature + ":" + r.ev_index, r]));
     for (const u of m.d) { const r = idx.get(u.signature + ":" + u.ev_index); if (r) Object.assign(r, u); }
     if (!S.paused) renderFlags();
+  } else if (m.t === "risk") {
+    S.risk = m.d.slice().reverse().concat(S.risk).slice(0, 2000);
+    renderRisk();
   } else if (m.t === "sandwich") {
     S.sands.unshift({ ...m.d, seen_ms: Date.now() });
     renderSands();
@@ -118,6 +144,7 @@ function onEvent(m) {
     S.stats = m.d;
     if (S.pmin == null) setPmin(m.d.threshold);
     renderStats();
+    renderRisk();
     renderCal();
   }
 }
@@ -139,6 +166,13 @@ function wire() {
     g.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
     S.f[g.dataset.f] = b.dataset.v;
     renderFlags();
+  }));
+  document.querySelectorAll(".seg[data-r]").forEach((g) => g.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    g.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    S.rview = b.dataset.v;
+    renderRisk();
   }));
   $("#pmin").addEventListener("input", (e) => { setPmin(e.target.value); renderFlags(); });
   $("#pause").addEventListener("click", (e) => {
@@ -169,6 +203,7 @@ async function bootArtifact() {
     S.stats = d.stats || {};
     S.flags = (d.flags || []).slice();
     S.sands = (d.sands || []).slice();
+    S.risk = (d.risk || []).slice();
     if (S.pmin == null) setPmin(S.stats.threshold ?? 0);
     updated = d.updated_ms || Date.now();
     render();
@@ -184,6 +219,7 @@ async function boot() {
     S.stats = snap.stats || {};
     S.flags = (snap.flags || []).reverse();
     S.sands = (snap.sandwiches || []).reverse();
+    S.risk = (snap.risk || []).reverse();
     setPmin(S.stats.threshold ?? 0);
   } catch (e) { $("#live-t").textContent = "no screener"; }
   render();
