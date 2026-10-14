@@ -100,7 +100,7 @@ class RpcPool:
     Each request goes to the endpoint whose pacing clock frees up first, so the pool runs at
     roughly the sum of the endpoints' rates; a failing endpoint falls through to the next."""
 
-    def __init__(self, specs: list[tuple[str, float]], concurrency: int = 6):
+    def __init__(self, specs: list[tuple[str, float]], concurrency: int = 8):
         self.rpcs = [Rpc(url, concurrency=concurrency, rps=rps) for url, rps in specs]
         self.vclock = [0.0] * len(self.rpcs)    # weighted round-robin: share follows rps
 
@@ -144,8 +144,8 @@ class RpcPool:
 
 
 def default_pool() -> RpcPool:
-    """Alchemy (from the env) plus the two public endpoints that serve full blocks."""
-    specs = [("https://solana-rpc.publicnode.com", 5.0), ("https://api.mainnet-beta.solana.com", 3.0)]
+    """Alchemy (from the env) plus the public endpoint that serves full blocks."""
+    specs = [("https://solana-rpc.publicnode.com", 7.0)]   # api.mainnet-beta 429s every getBlock
     if os.environ.get("ALCHEMY_RPC_URL"):
-        specs.insert(0, (os.environ["ALCHEMY_RPC_URL"], 5.0))
+        specs.insert(0, (os.environ["ALCHEMY_RPC_URL"], 7.0))
     return RpcPool(specs)
