@@ -72,3 +72,22 @@ delta if they hold on the 24 h sample and a second day.
 - Aggregate-flow MESP (front-run size optimal against expected flow) as a feature, vs phi.
 - Mayhem / fee-exempt pump curves (virtual SOL < 1, fee 0): separate regime, phi explodes.
 - Leader effect in the current era; evasive (transfer-linked) sandwiches not yet detected.
+
+## Filter v3 (24 h, 2026-10-13/14, 216,000 slots, 7.9M swaps; screener view)
+Held-out last 40% of the day (1.0M swaps, 25,054 entity-filtered victims; negatives subsampled 30%
+and weighted back). Deployed live 2026-10-14 20:46 UTC; threshold flags 2% at 18.8% precision,
+49.6% recall.
+
+| score | AUC | AP | prec@1% | rec@5% |
+|---|---|---|---|---|
+| size (SOL) | 0.745 | 0.025 | 0.049 | 0.245 |
+| slippage slack | 0.536 | 0.008 | 0.016 | 0.052 |
+| app exposure (Heimbach) | 0.656 | 0.017 | 0.044 | 0.177 |
+| standalone MESP | 0.653 | 0.021 | 0.045 | 0.279 |
+| phi | 0.834 | 0.032 | 0.063 | 0.180 |
+| pool attack history | 0.801 | 0.084 | 0.145 | 0.474 |
+| GBM without pool history | 0.964 | 0.210 | 0.237 | 0.750 |
+| GBM full | 0.970 | 0.226 | 0.249 | 0.786 |
+
+Stable from 4 k slots to 5 h to 24 h: slippage alone is near chance, phi is the best single swap
+property, pool flow and pool attack history are the two strongest features (gain 620k / 607k).
