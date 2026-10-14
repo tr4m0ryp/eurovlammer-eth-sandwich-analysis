@@ -50,10 +50,19 @@ def fronts(path: Path) -> dict[str, np.ndarray]:
     return {p: np.sort(g.slot.to_numpy()) for p, g in f.groupby("pool")}
 
 
-def topk(y: np.ndarray, s: np.ndarray, frac: float) -> tuple[float, float]:
-    k = max(int(len(s) * frac), 1)
-    top = np.argsort(-s, kind="stable")[:k]
-    return y[top].mean(), y[top].sum() / max(y.sum(), 1)
+def topk(y: np.ndarray, s: np.ndarray, frac: float, w: np.ndarray | None = None) -> tuple[float, float]:
+    """Precision and recall in the top ``frac`` of the (weighted) population by score."""
+    w = np.ones(len(s)) if w is None else w
+    order = np.argsort(-s, kind="stable")
+    cw = np.cumsum(w[order])
+    top = order[: max(int(np.searchsorted(cw, frac * cw[-1])) + 1, 1)]
+    return (y[top] * w[top]).sum() / w[top].sum(), y[top].sum() / max(y.sum(), 1)
+
+
+def wquantile(v: np.ndarray, q: float, w: np.ndarray) -> float:
+    o = np.argsort(v)
+    cw = np.cumsum(w[o])
+    return float(v[o][np.searchsorted(cw, q * cw[-1])])
 
 
 def app_rate(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
@@ -106,8 +115,8 @@ def run(df: pd.DataFrame) -> tuple[pd.DataFrame, lgb.Booster]:
     scores["GBM full + route rate"] = p_route
     rows = []
     for name, s in scores.items():
-        p1, r1 = topk(y, s, 0.01)
-        p5, r5 = topk(y, s, 0.05)
+        p1, r1 = topk(y, s, 0.01, te.w.to_numpy())
+        p5, r5 = topk(y, s, 0.05, te.w.to_numpy())
         w = te.w.to_numpy()
         rows.append({"score": name, "auc": roc_auc_score(y, s, sample_weight=w),
                      "ap": average_precision_score(y, s, sample_weight=w),
@@ -124,17 +133,18 @@ def save(df: pd.DataFrame, res: pd.DataFrame, path: Path, labels: Path, share: f
     cut = df.slot.quantile(0.6)
     tr, te = df[df.slot <= cut], df[df.slot > cut]
     p, _ = gbm(tr, te, FEATURES)
-    thr = float(np.quantile(p, 1 - share))
+    w = te.w.to_numpy()
+    thr = wquantile(p, 1 - share, w)
     y = te.y.to_numpy()
     hit = p >= thr
     _, model = gbm(df, df.iloc[:1], FEATURES)
     path.parent.mkdir(parents=True, exist_ok=True)
     model.save_model(str(path))
     full = res.set_index("score").loc["GBM full"]
-    meta = {"name": "gbm_screener_v1", "labels": str(labels), "n_rows": len(df), "slots": int(df.slot.nunique()),
-            "base_rate": float(df.y.mean()), "threshold": thr, "flag_share": share,
+    meta = {"name": path.stem, "labels": str(labels), "n_rows": len(df), "slots": int(df.slot.nunique()),
+            "base_rate": float((df.y * df.w).sum() / df.w.sum()), "threshold": thr, "flag_share": share,
             "test_auc": float(full.auc), "test_ap": float(full.ap),
-            "test_precision": float(y[hit].mean()), "test_recall": float(y[hit].sum() / max(y.sum(), 1)),
+            "test_precision": float((y[hit] * w[hit]).sum() / w[hit].sum()), "test_recall": float(y[hit].sum() / max(y.sum(), 1)),
             "features": FEATURES}
     path.with_suffix(".json").write_text(json.dumps(meta, indent=1))
     lab = pd.read_parquet(labels, columns=["attacker", "bot"])
