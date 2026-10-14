@@ -18,6 +18,7 @@ from .ingest.rpc import default_pool
 from .metrics.exposure import exposure
 from .screen import Labeler, Scorer
 from .screen.risk import KEEP as RISK_KEEP, RiskBook
+from .screen.visibility import LiveVisibility
 from .serve import Hub, serve
 from .serve.artifact import snapshot
 from .store import Store
@@ -70,6 +71,7 @@ async def main(cfg: dict) -> None:
     scored_at: dict[int, list] = {}
     victims: dict[tuple[str, int], tuple] = {}      # every victim seen; a front can precede its victim
     risk = RiskBook()
+    vis = LiveVisibility()
     last_push = 0.0
     push_path = store.dir / "push" / "snapshot.json"
     async with default_pool() as pool:
@@ -98,6 +100,10 @@ async def main(cfg: dict) -> None:
                     scored_at[slot] = list(zip(zip(df.signature, df.ev_index), df.p.astype(float)))
                     buys = df[df.is_buy][[c for c in RISK_KEEP if c in df.columns]]
                     risk.add(slot, [{k: _clean(v) for k, v in r.items()} for r in buys.to_dict("records")])
+                    vis_rows = vis.add(slot, f.lag_slots, [{k: _clean(v) for k, v in r.items()} for r in buys.to_dict("records")])
+                    for vr in vis_rows:
+                        hub.visible_optimal.append(vr)
+                        hub.publish("visible", vr)
                 settled, sands = lab.push(slot, blk["swaps"])
                 for x in sands:
                     if not lab.is_bot(x.attacker):
@@ -133,7 +139,7 @@ async def main(cfg: dict) -> None:
                 hub.add_risk(settled_risk)
                 store.settle(settled, victims)
                 hub.settle(settled, victims)
-                hub.stats = st.view(f, scorer, lab, slot) | {"risk": risk.stats()}
+                hub.stats = st.view(f, scorer, lab, slot) | {"risk": risk.stats(), "vis": vis.stats()}
                 hub.publish("stats", hub.stats)
                 if time.time() - last_push >= PUSH_EVERY_S:
                     last_push = time.time()

@@ -22,6 +22,7 @@ class Hub:
         self.flags: deque[dict] = deque(maxlen=RECENT)
         self.sandwiches: deque[dict] = deque(maxlen=200)
         self.risk: deque[dict] = deque(maxlen=RECENT)
+        self.visible_optimal: deque[dict] = deque(maxlen=200)
         self.stats: dict = {}
         self.by_key: dict[tuple[str, int], dict] = {}
         self.subs: set[asyncio.Queue] = set()
@@ -66,7 +67,7 @@ def app(hub: Hub) -> web.Application:
 
     async def snapshot(_):
         body = orjson.dumps({"stats": hub.stats, "flags": list(hub.flags), "sandwiches": list(hub.sandwiches),
-                             "risk": list(hub.risk)},
+                             "risk": list(hub.risk), "visible": list(hub.visible_optimal)},
                             option=orjson.OPT_SERIALIZE_NUMPY)
         return web.Response(body=body, content_type="application/json")
 
