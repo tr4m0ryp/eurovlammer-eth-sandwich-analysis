@@ -1,29 +1,69 @@
-"""Score each new swap with the trained model, using the exact offline feature code.
+"""Score each new swap with the trained model, with features identical to the backtest's.
 
-Context features need earlier swaps, so the scorer keeps the last ``HIST_SLOTS`` of swaps and
-recomputes context over history + new block, keeping only the new rows. That costs ~10 ms a block
-and buys bit-identical parity with the backtest.
+Base features come from the same vectorised code. Context features (same-side pool flow and pool
+trade count over the last ``CTX_SLOTS``, the signer's trade count over the last ``WALLET_SLOTS``)
+are kept incrementally in per-pool and per-signer deques, so a block costs O(its swaps) instead
+of a recompute over history; ``tests/unit/test_scorer.py`` pins parity with ``context_features``.
 """
 from __future__ import annotations
 
 import json
+from collections import defaultdict, deque
 from pathlib import Path
 
 import lightgbm as lgb
+import numpy as np
 import pandas as pd
 
-from ..metrics.features import FEATURES, features
+from ..metrics.features import CTX_SLOTS, FEATURES, WALLET_SLOTS, base_features
 
-HIST_SLOTS = 160
+
+class Context:
+    """Rolling pool flow and wallet activity, fed strictly in chain order."""
+
+    def __init__(self):
+        self.pool: dict[str, deque] = defaultdict(deque)      # (slot, signed lamports)
+        self.wallet: dict[str, deque] = defaultdict(deque)    # slot
+        self.last_gc = 0
+
+    def features(self, df: pd.DataFrame) -> pd.DataFrame:
+        flow, pool_n, wallet_n = [], [], []
+        for slot, pool, sol, buy, signer in zip(df["slot"], df["pool"], df["sol"], df["is_buy"], df["signer"]):
+            q = self.pool[pool]
+            while q and q[0][0] < slot - CTX_SLOTS:
+                q.popleft()
+            net = sum(v for _, v in q)
+            flow.append(net if buy else -net)
+            pool_n.append(len(q))
+            q.append((slot, sol if buy else -sol))
+            w = self.wallet[signer]
+            while w and w[0] < slot - WALLET_SLOTS:
+                w.popleft()
+            wallet_n.append(len(w))
+            w.append(slot)
+        x = df["x_ref"].astype(float).clip(lower=1.0).to_numpy()
+        out = pd.DataFrame(index=df.index)
+        out["log_flow_rel"] = np.log10(np.abs(np.array(flow, dtype=float)) / x + 1e-6)
+        out["log_pool_n"] = np.log10(np.array(pool_n, dtype=float) + 1)
+        out["log_wallet_n"] = np.log10(np.array(wallet_n, dtype=float) + 1)
+        return out
+
+    def gc(self, slot: int) -> None:
+        """Drop pools and wallets with nothing left in their windows (every ~1000 slots)."""
+        if slot - self.last_gc < 1000:
+            return
+        self.last_gc = slot
+        for d, horizon in ((self.pool, CTX_SLOTS), (self.wallet, WALLET_SLOTS)):
+            for k in [k for k, q in d.items() if not q or (q[-1][0] if isinstance(q[-1], tuple) else q[-1]) < slot - horizon]:
+                del d[k]
 
 
 class Scorer:
     def __init__(self, model_path: Path):
         self.model = lgb.Booster(model_file=str(model_path))
-        meta = json.loads(model_path.with_suffix(".json").read_text())
-        self.threshold = float(meta["threshold"])
-        self.meta = meta
-        self.hist = pd.DataFrame()
+        self.meta = json.loads(model_path.with_suffix(".json").read_text())
+        self.threshold = float(self.meta["threshold"])
+        self.ctx = Context()
 
     def score(self, rows: list[dict], slot: int, bots: set[str] = frozenset()) -> pd.DataFrame:
         """Rows of one block -> frame with features, ``p`` and ``flag``.
@@ -33,14 +73,12 @@ class Scorer:
         new = pd.DataFrame(rows)
         if new.empty:
             return new
-        new = new[~new["signer"].isin(bots)]
+        new = new[~new["signer"].isin(bots)].sort_values(["tx_index", "ev_index"]).reset_index(drop=True)
         if new.empty:
             return new
-        base = pd.concat([self.hist, new], ignore_index=True) if len(self.hist) else new.copy()
-        feats = features(base).iloc[len(base) - len(new):].reset_index(drop=True)
-        new = pd.concat([new.reset_index(drop=True), feats], axis=1)
+        feats = pd.concat([base_features(new), self.ctx.features(new)], axis=1)[FEATURES]
+        new = pd.concat([new, feats], axis=1)
         new["p"] = self.model.predict(new[FEATURES])
         new["flag"] = new["p"] >= self.threshold
-        keep = base[base["slot"] > slot - HIST_SLOTS]
-        self.hist = keep[[c for c in keep.columns if c not in FEATURES]].reset_index(drop=True)
+        self.ctx.gc(slot)
         return new
