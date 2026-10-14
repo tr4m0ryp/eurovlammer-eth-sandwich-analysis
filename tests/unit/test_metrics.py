@@ -12,10 +12,14 @@ def swap(sig, slot, idx, is_buy, sol, tok, user, fee=30.0, kind="in", amount=Non
                 kind, amount, limit, "buy" if is_buy else "sell")
 
 
-def test_no_slack_no_profit():
+def test_tight_slack_caps_profit():
+    """A big victim still pays a little through a tight limit: the front size is what the limit caps."""
     tok = Y * 5e9 / (X + 5e9)
-    s = swap("v", 1, 0, True, 5e9, tok, "V", kind="in", amount=int(5e9 * 1.003), limit=int(tok * 0.9999))
-    assert exposure(s).mesp == 0.0
+    tight = swap("v", 1, 0, True, 5e9, tok, "V", kind="in", amount=int(5e9 * 1.003), limit=int(tok * 0.9999))
+    loose = swap("v", 1, 0, True, 5e9, tok, "V", kind="in", amount=int(5e9 * 1.003), limit=1)
+    assert 0 < exposure(tight).mesp < 0.01 * exposure(loose).mesp
+    small = swap("v", 1, 0, True, 1e8, 0, "V", kind="in", amount=int(1e8 * 1.003), limit=1)
+    assert exposure(small).mesp == 0.0          # impact under the round-trip fee: nothing to take
 
 
 def test_slack_creates_profit_and_fee_destroys_it():
