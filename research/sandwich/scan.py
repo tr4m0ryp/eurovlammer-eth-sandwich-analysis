@@ -25,7 +25,7 @@ def block_rows(blk: dict) -> list[dict]:
             r = asdict(s)
             r.update(leader=blk["leader"], n_block_tx=blk["n_tx"], signer=f.signer, router=f.router,
                      cu_price=f.cu_price, cu_limit=f.cu_limit, cu_used=f.cu_used,
-                     priority_fee=f.priority_fee, jito_tip=f.jito_tip,
+                     priority_fee=f.priority_fee, jito_tip=f.jito_tip, dontfront=f.dontfront,
                      transfers=[t[0] for t in f.transfers], transfer_amts=[t[1] for t in f.transfers])
             rows.append(r)
     return rows
