@@ -17,6 +17,7 @@ import orjson
 from ..chain.programs import PUMP, PUMPSWAP
 from ..chain.swaps import decode_tx
 from ..chain.tx import account_keys
+from ..metrics.exposure import exposure
 from .rpc import RpcPool
 
 MAX_INFLIGHT = 24
@@ -37,8 +38,9 @@ def decode_block(raw: bytes | None, slot: int) -> dict:
         f, sw = decode_tx(tx, slot, i, bt)
         for s in sw:
             r = asdict(s)
+            e = exposure(s)                  # screener view: the swap's own pre-state
             r.update(signer=f.signer, router=f.router, cu_price=f.cu_price, priority_fee=f.priority_fee,
-                     jito_tip=f.jito_tip, dontfront=f.dontfront)
+                     jito_tip=f.jito_tip, dontfront=f.dontfront, x_ref=s.x_pre, slack=e.slack, mesp=e.mesp)
             rows.append(r)
     return {"slot": slot, "block_time": bt, "n_tx": len(b.get("transactions") or ()), "swaps": rows,
             "skipped": False}
@@ -56,6 +58,11 @@ class Follower:
 
     async def _fetch(self, slot: int) -> dict:
         raw = await self.pool.block(slot, raw=True)
+        for _ in range(3):                   # a fresh tip slot can answer "not available" briefly
+            if raw is not None or slot < self.tip - 3:
+                break
+            await asyncio.sleep(0.5)
+            raw = await self.pool.block(slot, raw=True)
         blk = await asyncio.get_running_loop().run_in_executor(self.exec, decode_block, raw, slot)
         bt = blk["block_time"]
         if bt is not None and bt > time.time() + MAX_BLOCK_LEAD_S:
