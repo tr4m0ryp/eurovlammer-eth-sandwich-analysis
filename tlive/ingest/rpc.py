@@ -102,6 +102,7 @@ class RpcPool:
 
     def __init__(self, specs: list[tuple[str, float]], concurrency: int = 6):
         self.rpcs = [Rpc(url, concurrency=concurrency, rps=rps) for url, rps in specs]
+        self.vclock = [0.0] * len(self.rpcs)    # weighted round-robin: share follows rps
 
     async def __aenter__(self) -> "RpcPool":
         for r in self.rpcs:
@@ -121,7 +122,9 @@ class RpcPool:
         return sum(r.n_retry for r in self.rpcs)
 
     async def _try(self, fn: str, *args, **kw):
-        order = sorted(self.rpcs, key=lambda r: r.next_t)
+        i = min(range(len(self.rpcs)), key=self.vclock.__getitem__)
+        self.vclock[i] += self.rpcs[i].gap
+        order = [self.rpcs[i]] + [r for j, r in enumerate(self.rpcs) if j != i]
         err: Exception | None = None
         for r in order:
             try:
