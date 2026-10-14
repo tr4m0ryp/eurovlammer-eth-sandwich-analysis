@@ -87,6 +87,7 @@ function renderRisk() {
     stat("Risk swaps", fmt.int(r.n), `sandwich gain above ${r.min_sol ?? 0.00001} SOL gas`),
     stat("Sandwiched", fmt.pct(r.n ? r.sandwiched / r.n : null), `${fmt.int(r.sandwiched)} of ${fmt.int(r.n)} risk swaps`),
     stat("Top 10% gain", fmt.int(r.top10), r.q90_sol != null ? `gain >= ${fmt.n(r.q90_sol, 4)} SOL` : "cutoff after 50 rows"),
+    stat("Gain on the table", fmt.n(r.gain_total_sol, 2) + " SOL", `median ${fmt.n(r.gain_median_sol, 4)} SOL per risk swap`),
     stat("Top 10% sandwiched", fmt.pct(r.top10 ? r.top10_sandwiched / r.top10 : null), `${fmt.int(r.top10_sandwiched)} of ${fmt.int(r.top10)}`),
   ].join("");
   const rows = S.risk.filter((x) => !S.rview || (S.rview === "top" ? x.top10 : x.status === "sandwiched"));
@@ -96,11 +97,13 @@ function renderRisk() {
     <td class="${x.is_buy ? "side-buy" : "side-sell"}">${x.is_buy ? "Buy" : "Sell"}</td>
     <td class="num">${fmt.sol(x.sol)}</td><td class="num">${fmt.sol(x.x_ref)}</td><td class="num">${fmt.int(x.fee_bps)}</td>
     <td class="num">${fmt.slack(x.slack)}</td><td class="num"><b>${fmt.n(x.mesp_best / 1e9, 4)}</b></td>
+    <td class="num">${fmt.pct(x.gain_pct)}</td><td class="num">${fmt.pct(x.gain_roi)}</td>
     <td>${x.top10 ? '<span class="tag brand">top 10%</span>' : ""}</td><td class="num">${fmt.n(x.p, 3)}</td>
     <td><span class="tag ${x.status}">${x.status}</span></td>
     <td class="num">${x.sw_profit != null ? fmt.n(x.sw_profit / 1e9, 4) : ""}</td>
+    <td class="num">${x.taken_pct != null ? fmt.pct(x.taken_pct) : ""}</td>
     <td><a class="mono" href="https://solscan.io/tx/${x.signature}" target="_blank" rel="noopener">${x.signature.slice(0, 8)}</a></td></tr>`).join("")
-    || `<tr><td colspan="14" class="muted">Risk swaps appear about 14 slots after they land, once their sandwich status is known.</td></tr>`;
+    || `<tr><td colspan="17" class="muted">Risk swaps appear about 14 slots after they land, once their sandwich status is known.</td></tr>`;
 }
 
 function renderCal() {

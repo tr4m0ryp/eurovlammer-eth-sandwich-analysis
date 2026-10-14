@@ -6,6 +6,10 @@ exceeds ``RISK_MIN_LAMPORTS``, the base fee of the attacker's two transactions. 
 the swap's own pre-state and, for a real victim, again at the pool state just before the front leg
 (``mesp_ref``: what the attacker actually priced against); either qualifies.
 
+Gain is reported three ways: ``mesp_best`` in lamports, ``gain_pct`` as a share of the victim's
+own trade, and ``gain_roi`` as a return on the attacker's optimal front-run size. A sandwiched row
+also carries what the attacker actually took (``sw_profit``, the whole sandwich, all victims).
+
 Rows are held per slot and written once, ``SETTLE`` slots later, with their final status
 (``sandwiched`` / ``clean``), so the table is insert-only. **Top 10%** marks risk rows whose best
 MESP is at or above the running 90th percentile of the session's risk rows; the morning export
@@ -19,7 +23,7 @@ import numpy as np
 
 RISK_MIN_LAMPORTS = 10_000
 KEEP = ("signature", "ev_index", "slot", "block_time", "venue", "pool", "mint", "signer", "router",
-        "is_buy", "sol", "x_ref", "fee_bps", "slack", "mesp", "phi", "p", "flag", "cu_price", "jito_tip")
+        "is_buy", "sol", "x_ref", "fee_bps", "slack", "mesp", "front_opt", "phi", "p", "flag", "cu_price", "jito_tip")
 
 
 class RiskBook:
@@ -43,7 +47,12 @@ class RiskBook:
                 best = max(r["mesp"] or 0.0, ref or 0.0)
                 if best <= RISK_MIN_LAMPORTS:
                     continue
-                r.update(mesp_ref=ref, mesp_best=best, status="sandwiched" if hit else "clean",
+                front = hit[5] if hit and (ref or 0) >= (r["mesp"] or 0) else (r["front_opt"] or 0.0)
+                sol = r["sol"] or 0
+                r.update(mesp_ref=ref, mesp_best=best, front_best=front,
+                         gain_pct=best / sol if sol else None,              # of the victim's trade
+                         gain_roi=best / front if front else None,          # on the front-run capital
+                         taken_pct=(hit[2] / sol) if hit and sol else None, status="sandwiched" if hit else "clean",
                          attacker=hit[1] if hit else None, sw_profit=hit[2] if hit else None)
                 out.append(r)
         if out:
@@ -61,6 +70,8 @@ class RiskBook:
         return out
 
     def stats(self) -> dict:
-        return {"n": self.n, "sandwiched": self.n_hit, "top10": self.n_top, "top10_sandwiched": self.n_top_hit,
+        g = np.array(self.mesp_all) if self.mesp_all else np.zeros(1)
+        return {"gain_total_sol": float(g.sum()) / 1e9, "gain_median_sol": float(np.median(g)) / 1e9,
+                "n": self.n, "sandwiched": self.n_hit, "top10": self.n_top, "top10_sandwiched": self.n_top_hit,
                 "q90_sol": self.q90 / 1e9 if np.isfinite(self.q90) else None,
                 "min_sol": RISK_MIN_LAMPORTS / 1e9}
