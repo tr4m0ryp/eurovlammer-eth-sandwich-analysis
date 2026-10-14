@@ -10,7 +10,7 @@ import orjson
 
 BLOCK_OPTS = {"encoding": "json", "maxSupportedTransactionVersion": 1,
               "transactionDetails": "full", "rewards": False, "commitment": "confirmed"}
-SKIPPED = (-32007, -32009, -32004)   # slot skipped / missing in long-term storage / not available yet
+SKIPPED = (-32007, -32009, -32004, -32001)   # skipped / not in storage / not yet available / pruned
 
 
 def rpc_url(env: str = "ALCHEMY_RPC_URL") -> str:
