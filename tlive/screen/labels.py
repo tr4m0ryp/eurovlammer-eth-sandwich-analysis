@@ -39,6 +39,9 @@ class Labeler:
     def bots(self) -> set[str]:
         return self.known_bots | {w for w in self.att if self.is_bot(w)}
 
+    def bots(self) -> set[str]:
+        return self.known_bots | {w for w in self.att if self.is_bot(w)}
+
     def push(self, slot: int, rows: list[dict]) -> tuple[int, list[Sandwich]]:
         """Add one block; returns (settled slot, sandwiches whose front leg starts there)."""
         sw = [Swap(**{k: r[k] for k in _FIELDS}) for r in rows]
