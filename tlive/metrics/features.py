@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 CTX_SLOTS = 8
+WALLET_SLOTS = 150
 SLACK_CAP = 10.0
 FEATURES = ["log_sol", "log_x", "f_fee_bps", "phi", "log_phi", "slack_c", "slack_known", "room",
             "log_mesp", "mesp_rel", "f_buy", "exact_out", "venue_swap", "direct", "f_dontfront",
@@ -74,7 +75,7 @@ def context_features(df: pd.DataFrame) -> pd.DataFrame:
                  df["is_buy"].to_numpy()[idx], idx, flow, pool_n)
     for _, idx in df.groupby("signer", sort=False).indices.items():
         s = slot[idx]
-        lo = np.searchsorted(s, s - 150, side="left")         # ~1 minute of the wallet's history
+        lo = np.searchsorted(s, s - WALLET_SLOTS, side="left")   # the wallet's recent history
         wallet_n[idx] = np.arange(len(idx)) - lo
     x = df["x_ref"].astype(float).clip(lower=1.0).to_numpy()
     out["log_flow_rel"] = np.log10(np.abs(flow) / x + 1e-6)
