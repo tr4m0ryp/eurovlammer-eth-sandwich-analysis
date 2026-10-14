@@ -22,6 +22,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from tlive.metrics.features import FEATURES, features
 
 PHI_FREE = [f for f in FEATURES if f not in ("phi", "log_phi", "room", "log_mesp", "mesp_rel")]
+NO_HIST = [f for f in FEATURES if f != "log_pool_hist"]
 PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=15, min_data_in_leaf=40,
               feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0,
               verbose=-1, seed=7, num_threads=2)
@@ -35,7 +36,14 @@ def load(path: Path, view: str) -> pd.DataFrame:
     if view == "screener":
         df["x_ref"], df["slack"], df["mesp"] = df.x_pre, df.slack_exec, df.mesp_exec
     df = df.sort_values(["slot", "tx_index", "ev_index"]).reset_index(drop=True)
-    return pd.concat([df, features(df)], axis=1)
+    return pd.concat([df, features(df, fronts(path))], axis=1)
+
+
+def fronts(path: Path) -> dict[str, np.ndarray]:
+    """Pool -> sorted first-front slots of entity-filtered sandwiches."""
+    lab = pd.read_parquet(path, columns=["pool", "slot", "role", "bot", "sandwich"])
+    f = lab[(lab.role == "front") & lab.bot].groupby("sandwich").agg(pool=("pool", "first"), slot=("slot", "min"))
+    return {p: np.sort(g.slot.to_numpy()) for p, g in f.groupby("pool")}
 
 
 def topk(y: np.ndarray, s: np.ndarray, frac: float) -> tuple[float, float]:
@@ -82,10 +90,12 @@ def run(df: pd.DataFrame) -> tuple[pd.DataFrame, lgb.Booster]:
         "standalone MESP": te.log_mesp.to_numpy(),
         "phi (impact / fee hurdle)": te.log_phi.to_numpy(),
         "room (slack-capped phi)": te.room.to_numpy(),
+        "pool attack history": te.log_pool_hist.to_numpy(),
     }
     p_free, _ = gbm(tr, te, PHI_FREE)
     p_all, model = gbm(tr, te, FEATURES)
     scores["GBM without phi/MESP"] = p_free
+    scores["GBM without pool history"] = gbm(tr, te, NO_HIST)[0]
     scores["GBM full"] = p_all
     tr, te = tr.assign(route_rate=route_oof(tr)), te.assign(route_rate=app_rate(tr, te))
     p_route, _ = gbm(tr, te, FEATURES + ["route_rate"])

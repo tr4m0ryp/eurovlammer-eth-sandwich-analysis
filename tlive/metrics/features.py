@@ -22,10 +22,12 @@ import pandas as pd
 
 CTX_SLOTS = 8
 WALLET_SLOTS = 150
+POOL_HIST_SLOTS = 600        # attack history window on a pool
+SETTLE_SLOTS = 14            # a sandwich is known only this long after its front leg (live labeller)
 SLACK_CAP = 10.0
 FEATURES = ["log_sol", "log_x", "f_fee_bps", "phi", "log_phi", "slack_c", "slack_known", "room",
             "log_mesp", "mesp_rel", "f_buy", "exact_out", "venue_swap", "direct", "f_dontfront",
-            "log_cu_price", "has_tip", "log_flow_rel", "log_pool_n", "log_wallet_n"]
+            "log_cu_price", "has_tip", "log_flow_rel", "log_pool_n", "log_wallet_n", "log_pool_hist"]
 
 
 def base_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -94,5 +96,20 @@ def _rolling(slot, signed, is_buy, idx, flow, count):
     count[idx] = pos - lo
 
 
-def features(df: pd.DataFrame) -> pd.DataFrame:
-    return pd.concat([base_features(df), context_features(df)], axis=1)[FEATURES]
+def pool_history(df: pd.DataFrame, fronts: dict[str, np.ndarray]) -> pd.Series:
+    """Sandwiches already settled on the swap's pool: fronts in [slot - POOL_HIST_SLOTS,
+    slot - SETTLE_SLOTS). ``fronts`` maps pool -> sorted front-leg slots. Attackers camp on pools,
+    so this is the single strongest feature, and the settle lag keeps it point-in-time."""
+    cnt = np.zeros(len(df))
+    slot = df["slot"].to_numpy()
+    for pool, idx in df.groupby("pool", sort=False).indices.items():
+        a = fronts.get(pool)
+        if a is not None and len(a):
+            s = slot[idx]
+            cnt[idx] = np.searchsorted(a, s - SETTLE_SLOTS, "left") - np.searchsorted(a, s - POOL_HIST_SLOTS, "left")
+    return pd.Series(np.log10(cnt + 1), index=df.index, name="log_pool_hist")
+
+
+def features(df: pd.DataFrame, fronts: dict[str, np.ndarray] | None = None) -> pd.DataFrame:
+    hist = pool_history(df, fronts or {})
+    return pd.concat([base_features(df), context_features(df), hist], axis=1)[FEATURES]
