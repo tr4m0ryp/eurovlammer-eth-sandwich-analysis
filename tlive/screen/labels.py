@@ -28,6 +28,8 @@ class Labeler:
         self.known_bots = set(json.loads(bots_path.read_text())) if bots_path and bots_path.exists() else set()
         self.n_swaps: Counter[str] = Counter()
         self.att: dict[str, list[float]] = defaultdict(list)
+        self._bots: set[str] | None = None
+        self._bots_age = 0
 
     def is_bot(self, w: str) -> bool:
         if w in self.known_bots:
@@ -37,10 +39,20 @@ class Labeler:
         return len(ps) >= 3 and sum(p > 0 for p in ps) / len(ps) >= 0.6 and legs / max(self.n_swaps[w], 1) >= 0.25
 
     def bots(self) -> set[str]:
-        return self.known_bots | {w for w in self.att if self.is_bot(w)}
+        """Known plus session-qualified attackers, rebuilt every 64 blocks (it is read every block)."""
+        if self._bots is None or self._bots_age >= 64:
+            self._bots = self.known_bots | {w for w in self.att if self.is_bot(w)}
+            self._bots_age = 0
+        self._bots_age += 1
+        return self._bots
 
     def bots(self) -> set[str]:
-        return self.known_bots | {w for w in self.att if self.is_bot(w)}
+        """Known plus session-qualified attackers, rebuilt every 64 blocks (it is read every block)."""
+        if self._bots is None or self._bots_age >= 64:
+            self._bots = self.known_bots | {w for w in self.att if self.is_bot(w)}
+            self._bots_age = 0
+        self._bots_age += 1
+        return self._bots
 
     def push(self, slot: int, rows: list[dict]) -> tuple[int, list[Sandwich]]:
         """Add one block; returns (settled slot, sandwiches whose front leg starts there)."""

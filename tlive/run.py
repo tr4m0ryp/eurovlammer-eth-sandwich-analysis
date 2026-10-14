@@ -17,7 +17,7 @@ from .ingest.follow import Follower
 from .ingest.rpc import default_pool
 from .metrics.exposure import exposure
 from .screen import Labeler, Scorer
-from .screen.risk import RiskBook
+from .screen.risk import KEEP as RISK_KEEP, RiskBook
 from .serve import Hub, serve
 from .serve.artifact import snapshot
 from .store import Store
@@ -54,7 +54,7 @@ class Stats:
                 "settled_flags": self.settled_flags, "flag_hits": self.flag_hits, "victims": self.victims,
                 "victims_flagged": self.victims_flagged, "sandwiches": self.sandwiches,
                 "profit_sol": self.profit / 1e9, "threshold": scorer.threshold,
-                "bots": len([w for w in lab.att if lab.is_bot(w)]), "clock_rejects": f.clock_rejects,
+                "bots": len(lab.bots()) - len(lab.known_bots), "clock_rejects": f.clock_rejects,
                 "model_meta": {k: v for k, v in scorer.meta.items() if not isinstance(v, (dict, list))},
                 "calibration": [{"lo": e, "n": n, "hits": h} for e, n, h in zip(EDGES, self.cal_n, self.cal_hit)]}
 
@@ -96,7 +96,8 @@ async def main(cfg: dict) -> None:
                     st.flags += len(rows)
                     flagged_at[slot] = {(r["signature"], r["ev_index"]) for r in rows}
                     scored_at[slot] = list(zip(zip(df.signature, df.ev_index), df.p.astype(float)))
-                    risk.add(slot, [{k: _clean(v) for k, v in r.items()} for r in df.to_dict("records")])
+                    buys = df[df.is_buy][[c for c in RISK_KEEP if c in df.columns]]
+                    risk.add(slot, [{k: _clean(v) for k, v in r.items()} for r in buys.to_dict("records")])
                 settled, sands = lab.push(slot, blk["swaps"])
                 for x in sands:
                     if not lab.is_bot(x.attacker):
