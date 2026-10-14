@@ -2,7 +2,7 @@
 # Spot fleet for the block pull. Each worker pulls one slot range from publicnode (its rate limit is
 # per IP, so N workers pull N times faster), decodes it to swap Parquet on the box, pushes raw and
 # decoded chunks to S3 and terminates itself. No SSH: the worker is entirely user-data.
-#   pull_fleet.sh launch RUN START END N     slots [START, END) split over N workers
+#   pull_fleet.sh launch RUN START END N [W0] slots [START, END) over N workers numbered from W0
 #   pull_fleet.sh status RUN                 instances, done markers, last log line per worker
 #   pull_fleet.sh fetch RUN                  decoded swaps to data/interim/swaps_RUN (raw stays in S3)
 #   pull_fleet.sh terminate RUN              stop every instance tagged run=RUN
@@ -14,6 +14,7 @@ export AWS_PROFILE=trenches-v2 AWS_DEFAULT_REGION=us-east-1
 ACCOUNT=AWS_ACCOUNT_ID BUCKET=trenches-train-AWS_ACCOUNT_ID DEADLINE_MIN=${DEADLINE_MIN:-180}
 TYPES=${TYPES:-"c7a.xlarge c6a.xlarge m7a.xlarge c7i.xlarge"}
 RPS=${RPS:-7}
+MARKET=${MARKET:-spot}       # MARKET=ondemand for a relaunch that must not be interrupted
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
 session() {
@@ -33,7 +34,9 @@ export DEBIAN_FRONTEND=noninteractive HOME=/root
 apt-get update -qq && apt-get install -y -qq python3-venv python3-pip
 python3 -m venv /v && /v/bin/pip install -q awscli aiohttp orjson base58 pandas pyarrow duckdb numpy
 mkdir -p /w && cd /w && /v/bin/aws s3 cp \$B/code.tgz . && tar xzf code.tgz
-( while sleep 60; do /v/bin/aws s3 cp /var/log/tl-worker.log \$B/logs/worker_$w.log --quiet; done ) &
+( while sleep 60; do /v/bin/aws s3 cp /var/log/tl-worker.log \$B/logs/worker_$w.log --quiet
+  /v/bin/aws s3 sync /w/raw \$B/raw/ --exclude '*.tmp' --quiet; done ) &   # chunks survive a spot loss
+mkdir -p /w/raw && /v/bin/aws s3 sync \$B/raw/ /w/raw/ --exclude '*' --include "\$(( $s / 200 * 200 ))*" --quiet || true
 TL_RPC_SPECS="https://solana-rpc.publicnode.com=$RPS" /v/bin/python -m research.sandwich.pull --start $s --end $e --out /w/raw
 /v/bin/python -m research.sandwich.scan --raw /w/raw --out /w/swaps --workers 3
 /v/bin/aws s3 sync /w/raw \$B/raw/ --quiet
@@ -46,7 +49,7 @@ EOF
 }
 
 launch() {
-  local run=$1 start=$2 end=$3 n=$4
+  local run=$1 start=$2 end=$3 n=$4 w0=${5:-0}
   session
   local per=$(( ((end - start) / n + 199) / 200 * 200 ))
   tar czf /tmp/tl_code_$run.tgz -C "$R" --exclude=__pycache__ tlive research
@@ -57,17 +60,19 @@ launch() {
   subnets=($(aws ec2 describe-subnets --filters Name=default-for-az,Values=true --query 'Subnets[].SubnetId' --output text))
   local tags="[{Key=project,Value=trenches-live},{Key=run,Value=$run},{Key=Name,Value=tl-$run}]"
   mkdir -p "$R/logs/$run"
-  for w in $(seq 0 $((n - 1))); do
-    local s=$((start + w * per)) e=$((start + (w + 1) * per)); [ $e -gt "$end" ] && e=$end
+  for i in $(seq 0 $((n - 1))); do
+    local w=$((w0 + i)) s=$((start + i * per)) e=$((start + (i + 1) * per)); [ $e -gt "$end" ] && e=$end
     [ $s -ge "$end" ] && break
     userdata "$run" "$w" "$s" "$e" > "$R/logs/$run/userdata_$w.sh"
     local ok=
     for t in $TYPES; do
       for k in "${!subnets[@]}"; do
         local sub=${subnets[$(( (w + k) % ${#subnets[@]} ))]}
+        local mk=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
+        [ "$MARKET" = ondemand ] && mk=()
         id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$t" --key-name trenches-train \
           --security-group-ids "$sg" --subnet-id "$sub" --count 1 --iam-instance-profile Name=trenches-train-ec2 \
-          --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
+          "${mk[@]}" \
           --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=40,VolumeType=gp3,DeleteOnTermination=true}' \
           --tag-specifications "ResourceType=instance,Tags=$tags" "ResourceType=volume,Tags=$tags" \
           --instance-initiated-shutdown-behavior terminate --metadata-options HttpTokens=required \
