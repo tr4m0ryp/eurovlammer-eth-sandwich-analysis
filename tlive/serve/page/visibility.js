@@ -44,9 +44,7 @@ function renderVisSummary() {
     const rt = ROUTE_LABEL[r.route_type] || r.route_type;
     const tip = r.tipped ? "Tipped" : "Untipped";
     const pool = r.hot ? "Hot pool" : "Quiet pool";
-    const tier = r.hot && !r.tipped && r.route_type === "direct" ? "high" :
-                 !r.hot && r.tipped && r.route_type !== "direct" ? "low" :
-                 r.hot || !r.tipped || r.route_type === "direct" ? "medium" : "low";
+    const tier = r.visibility;
     return `<tr><td>${rt}</td><td>${tip}</td><td>${pool}</td>
       <td class="num">${fmt.int(r.n)}</td><td class="num"><b>${fmt.pct(r.hit_rate)}</b></td>
       <td class="num">${fmt.n(r.net_sol, 1)}</td>
