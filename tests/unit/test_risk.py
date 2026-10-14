@@ -17,4 +17,4 @@ def test_risk_rows_and_shares():
     assert abs(out["v"]["taken_pct"] - 0.03) < 1e-12
     assert out["b"]["status"] == "clean" and out["b"]["sw_profit"] is None
     top = [r for r in out.values() if r["top10"]]
-    assert 5 <= len(top) <= 8 and out["v"]["top10"]
+    assert 5 <= len(top) <= 8 and not out["v"]["top10"] and out["f59"]["top10"]
