@@ -73,6 +73,10 @@ def build(db: Path = ROOT / "data" / "screener.duckdb") -> list[Path]:
              else 'other_router' end as route_type,
         (coalesce(jito_tip, 0) > 0) as tipped,
         (coalesce(log_flow_rel, -999) > {HOT_THRESHOLD}) as hot,
+        case when coalesce(log_flow_rel, -999) > {HOT_THRESHOLD} and router = '' and coalesce(jito_tip, 0) = 0 then 'high'
+             when coalesce(log_flow_rel, -999) > {HOT_THRESHOLD} and (router != '' or coalesce(jito_tip, 0) > 0) then 'medium'
+             when coalesce(log_flow_rel, -999) <= {HOT_THRESHOLD} and router = '' and coalesce(jito_tip, 0) = 0 then 'medium'
+             else 'low' end as visibility,
         count(*) n, avg((status = 'sandwiched')::int) hit_rate,
         sum(net_real) / 1e9 net_sol
         from optimal where optimal group by all order by hit_rate desc""")
@@ -80,7 +84,7 @@ def build(db: Path = ROOT / "data" / "screener.duckdb") -> list[Path]:
     # Write only visible (high + medium) rows to the document chunks
     visible = df[df.visibility != "low"].sort_values("rank")
     rows = [[
-        int(r["rank"]), int(r["block_time"]), r["venue"], round(r["sol"] / 1e9, 4),
+        int(r["rank"]), int(r["block_time"]), "p" if r["venue"] == "pump" else "s", round(r["sol"] / 1e9, 4),
         round(r["mc_sol"], 1), round(r["pct_mc"] * 100, 3), int(r["fee_bps"]),
         round(min(r["slack"], 10), 4) if r["slack"] is not None else None,
         round(r["gain_real"] / 1e9, 5), round(r["net_real"] / 1e9, 5),
