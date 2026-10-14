@@ -36,6 +36,9 @@ class Labeler:
         legs = 2 * len(ps)
         return len(ps) >= 3 and sum(p > 0 for p in ps) / len(ps) >= 0.6 and legs / max(self.n_swaps[w], 1) >= 0.25
 
+    def bots(self) -> set[str]:
+        return self.known_bots | {w for w in self.att if self.is_bot(w)}
+
     def push(self, slot: int, rows: list[dict]) -> tuple[int, list[Sandwich]]:
         """Add one block; returns (settled slot, sandwiches whose front leg starts there)."""
         sw = [Swap(**{k: r[k] for k in _FIELDS}) for r in rows]

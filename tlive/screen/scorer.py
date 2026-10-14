@@ -25,9 +25,15 @@ class Scorer:
         self.meta = meta
         self.hist = pd.DataFrame()
 
-    def score(self, rows: list[dict], slot: int) -> pd.DataFrame:
-        """Rows of one block -> frame with features, ``p`` and ``flag``."""
+    def score(self, rows: list[dict], slot: int, bots: set[str] = frozenset()) -> pd.DataFrame:
+        """Rows of one block -> frame with features, ``p`` and ``flag``.
+
+        Swaps by known attackers are dropped first, as in training: their front legs would
+        otherwise inflate the very pool-flow feature that marks their victims."""
         new = pd.DataFrame(rows)
+        if new.empty:
+            return new
+        new = new[~new["signer"].isin(bots)]
         if new.empty:
             return new
         base = pd.concat([self.hist, new], ignore_index=True) if len(self.hist) else new.copy()
