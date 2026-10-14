@@ -21,6 +21,7 @@ class Hub:
     def __init__(self):
         self.flags: deque[dict] = deque(maxlen=RECENT)
         self.sandwiches: deque[dict] = deque(maxlen=200)
+        self.risk: deque[dict] = deque(maxlen=RECENT)
         self.stats: dict = {}
         self.by_key: dict[tuple[str, int], dict] = {}
         self.subs: set[asyncio.Queue] = set()
@@ -38,6 +39,11 @@ class Hub:
         self.flags.append(row)
         self.by_key[(row["signature"], row["ev_index"])] = row
         self.publish("flag", row)
+
+    def add_risk(self, rows: list[dict]) -> None:
+        if rows:
+            self.risk.extend(rows)
+            self.publish("risk", rows)
 
     def settle(self, slot: int, victims: dict) -> None:
         changed = []
@@ -59,7 +65,8 @@ def app(hub: Hub) -> web.Application:
         return web.FileResponse(PAGE / "index.html")
 
     async def snapshot(_):
-        body = orjson.dumps({"stats": hub.stats, "flags": list(hub.flags), "sandwiches": list(hub.sandwiches)},
+        body = orjson.dumps({"stats": hub.stats, "flags": list(hub.flags), "sandwiches": list(hub.sandwiches),
+                             "risk": list(hub.risk)},
                             option=orjson.OPT_SERIALIZE_NUMPY)
         return web.Response(body=body, content_type="application/json")
 
