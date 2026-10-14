@@ -57,7 +57,7 @@ function renderVisRows() {
   const asc = V.sort === "rank";
   const rows = V.rows.filter((r) => !V.view || (V.view === "hit" ? r.sandwiched : V.view === "missed" ? !r.sandwiched : V.view === "high" ? r.visibility === "high" : r.visibility === "medium"))
     .sort((a, b) => (asc ? a[key] - b[key] : (b[key] ?? -1) - (a[key] ?? -1)));
-  $("#vis-count").textContent = `${rows.length.toLocaleString("en-US")} rows, showing the first 500`;
+  $("#vis-count").textContent = rows.length > 500 ? `${rows.length.toLocaleString("en-US")} rows, showing the first 500` : `${rows.length.toLocaleString("en-US")} rows`;
   $("#vis-rows").innerHTML = rows.slice(0, 500).map((r) => `<tr>
     <td class="num">${r.rank}</td><td class="num">${fmt.time(r.block_time * 1000)}</td><td>${r.venue === "p" ? "pump" : "PumpSwap"}</td>
     <td class="num">${fmt.n(r.sol, 3)}</td><td class="num">${fmt.n(r.mc_sol, 1)}</td><td class="num">${fmt.n(r.pct_mc, 2)}%</td>

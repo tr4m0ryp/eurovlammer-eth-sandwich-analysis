@@ -54,7 +54,7 @@ function renderOptRows() {
   const asc = O.sort === "rank";
   const rows = O.rows.filter((r) => !O.view || (O.view === "hit" ? r.sandwiched : O.view === "missed" ? !r.sandwiched : O.view === "hot" ? r.hot : !r.hot))
     .sort((a, b) => (asc ? a[key] - b[key] : (b[key] ?? -1) - (a[key] ?? -1)));
-  $("#opt-count").textContent = `${rows.length.toLocaleString("en-US")} rows, showing the first 500`;
+  $("#opt-count").textContent = rows.length > 500 ? `${rows.length.toLocaleString("en-US")} rows, showing the first 500` : `${rows.length.toLocaleString("en-US")} rows`;
   $("#opt-rows").innerHTML = rows.slice(0, 500).map((r) => `<tr>
     <td class="num">${r.rank}</td><td class="num">${fmt.time(r.block_time * 1000)}</td><td>${r.venue === "p" ? "pump" : "PumpSwap"}</td>
     <td class="num">${fmt.n(r.sol, 3)}</td><td class="num">${fmt.n(r.mc_sol, 1)}</td><td class="num">${fmt.n(r.pct_mc, 2)}%</td>
