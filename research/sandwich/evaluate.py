@@ -24,7 +24,7 @@ from tlive.metrics.features import FEATURES, features
 PHI_FREE = [f for f in FEATURES if f not in ("phi", "log_phi", "room", "log_mesp", "mesp_rel")]
 PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=15, min_data_in_leaf=40,
               feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0,
-              verbose=-1, seed=7)
+              verbose=-1, seed=7, num_threads=2)
 
 
 def load(path: Path, view: str) -> pd.DataFrame:
