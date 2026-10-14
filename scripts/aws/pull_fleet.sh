@@ -36,7 +36,6 @@ python3 -m venv /v && /v/bin/pip install -q awscli aiohttp orjson base58 pandas 
 mkdir -p /w && cd /w && /v/bin/aws s3 cp \$B/code.tgz . && tar xzf code.tgz
 ( while sleep 60; do /v/bin/aws s3 cp /var/log/tl-worker.log \$B/logs/worker_$w.log --quiet
   /v/bin/aws s3 sync /w/raw \$B/raw/ --exclude '*.tmp' --quiet; done ) &   # chunks survive a spot loss
-mkdir -p /w/raw && /v/bin/aws s3 sync \$B/raw/ /w/raw/ --exclude '*' --include "\$(( $s / 200 * 200 ))*" --quiet || true
 TL_RPC_SPECS="https://solana-rpc.publicnode.com=$RPS" /v/bin/python -m research.sandwich.pull --start $s --end $e --out /w/raw
 /v/bin/python -m research.sandwich.scan --raw /w/raw --out /w/swaps --workers 3
 /v/bin/aws s3 sync /w/raw \$B/raw/ --quiet
