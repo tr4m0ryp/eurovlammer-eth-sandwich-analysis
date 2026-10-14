@@ -83,6 +83,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--slots", type=int, default=27000)
     ap.add_argument("--end", type=int, default=0, help="last slot (default: confirmed tip - 200)")
+    ap.add_argument("--start", type=int, default=0, help="first slot (overrides --slots; 200-aligned)")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args()
 
@@ -91,8 +92,11 @@ def main() -> None:
         if not end:
             async with default_pool() as rpc:
                 end = await rpc.slot() - 200
-        start = end - a.slots
+        start = a.start or end - a.slots
         start -= start % 200
+        if a.start:
+            await pull(start, end - start, a.out)
+            return
         await pull(start, a.slots, a.out)
     asyncio.run(run())
 
