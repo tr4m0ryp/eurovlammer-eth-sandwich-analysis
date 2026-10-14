@@ -17,9 +17,11 @@ from .ingest.follow import Follower
 from .ingest.rpc import default_pool
 from .screen import Labeler, Scorer
 from .serve import Hub, serve
+from .serve.artifact import snapshot
 from .store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
+PUSH_EVERY_S = 60           # artifact snapshot cadence (one database write per push)
 EDGES = [0, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 
 
@@ -65,6 +67,8 @@ async def main(cfg: dict) -> None:
     flagged_at: dict[int, set] = {}
     scored_at: dict[int, list] = {}
     victims: dict[tuple[str, int], tuple] = {}      # every victim seen; a front can precede its victim
+    last_push = 0.0
+    push_path = store.dir / "push" / "snapshot.json"
     async with default_pool() as pool:
         f = Follower(pool)
         try:
@@ -122,6 +126,9 @@ async def main(cfg: dict) -> None:
                 hub.settle(settled, victims)
                 hub.stats = st.view(f, scorer, lab, slot)
                 hub.publish("stats", hub.stats)
+                if time.time() - last_push >= PUSH_EVERY_S:
+                    last_push = time.time()
+                    snapshot(hub, push_path)
         finally:
             f.exec.shutdown(cancel_futures=True)
             store.close()
