@@ -149,8 +149,36 @@ function wire() {
   });
 }
 
+// Artifact mode: the page runs on claude.ai and reads the screener's snapshot from the artifact
+// database (pushed about once a minute), instead of the local API and event stream.
+async function bootArtifact() {
+  render();
+  const db = await window.claude.use("db");
+  if (!db) { $("#live-t").textContent = "sign in to claude.ai to see the live feed"; return; }
+  let updated = 0;
+  const tick = () => {
+    if (!updated) return;
+    const age = Math.round((Date.now() - updated) / 1000);
+    $("#live").className = "live " + (age < 180 ? "on" : "off");
+    $("#live-t").textContent = age < 180 ? `live, updated ${age}s ago` : `screener offline since ${fmt.time(updated)} UTC`;
+  };
+  setInterval(tick, 1000);
+  db.doc("live/snapshot").onSnapshot((snap) => {
+    if (!snap.exists) { $("#live-t").textContent = "waiting for the screener"; return; }
+    const d = snap.data();
+    S.stats = d.stats || {};
+    S.flags = (d.flags || []).slice();
+    S.sands = (d.sands || []).slice();
+    if (S.pmin == null) setPmin(S.stats.threshold ?? 0);
+    updated = d.updated_ms || Date.now();
+    render();
+    tick();
+  }, () => { $("#live-t").textContent = "feed unavailable"; });
+}
+
 async function boot() {
   wire();
+  if (window.claude && window.claude.use) return bootArtifact();
   try {
     const snap = await (await fetch("/api/snapshot")).json();
     S.stats = snap.stats || {};
