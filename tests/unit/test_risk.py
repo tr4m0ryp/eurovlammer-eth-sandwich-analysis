@@ -3,7 +3,8 @@ from tlive.screen.risk import RiskBook
 
 
 def row(sig, mesp, sol=1e9, front=5e8):
-    return {"signature": sig, "ev_index": 0, "slot": 1, "sol": sol, "mesp": mesp, "front_opt": front}
+    return {"signature": sig, "ev_index": 0, "slot": 1, "sol": sol, "mesp": mesp, "front_opt": front,
+            "is_buy": True, "x_ref": 3e10, "y_pre": 1e15}
 
 
 def test_risk_rows_and_shares():
@@ -18,3 +19,4 @@ def test_risk_rows_and_shares():
     assert out["b"]["status"] == "clean" and out["b"]["sw_profit"] is None
     top = [r for r in out.values() if r["top10"]]
     assert 5 <= len(top) <= 8 and not out["v"]["top10"] and out["f59"]["top10"]
+    assert abs(out["b"]["mc_sol"] - 30.0) < 1e-9 and abs(out["b"]["size_mc"] - 1 / 30) < 1e-12
