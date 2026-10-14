@@ -10,6 +10,14 @@ Non-goals: no trading, signing or submitting (read-only on chain).
 
 ## Vision Updates
 - 2026-10-14: AWS account trenches (AWS_ACCOUNT_ID) is in scope for this project; use it for bulk pulls.
+- 2026-10-14: overnight collection of **risk** swaps = theoretically sandwichable (slack-capped MESP above
+  the attacker's two-transaction gas), each with sandwich gain (SOL, % of trade, return on front-run),
+  a top-10%-gain label and the real sandwiched tag. Run unattended (cron watchdog), export in the morning.
+- 2026-10-14: risk = **buy-side only** (attacker buys before, sells after). User's call, confirmed by data:
+  91% of 7,563 real attacks in the 5 h block front-run a buy. Attacker front capped at 5 SOL (p99 of
+  real fronts 3.0 SOL, max 6.9). User hypothesis: buy size relative to market cap drives gain. On 1.2M
+  buys the victim rate rises from ~0 (bottom half) to 27 (decile 9) and 72 per mille (decile 10,
+  >= 0.31% of MC); Spearman with gain 0.38 vs 0.33 for raw SOL. Holds; it is phi without the fee term.
 
 ## Ground truth
 Labels come from real attacks, not a rule. Detector = H1/H2 of Heimbach, Solmaz, Oz, Ferreira Torres
