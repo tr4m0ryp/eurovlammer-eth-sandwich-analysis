@@ -193,6 +193,8 @@ async function bootArtifact() {
   const db = await window.claude.use("db");
   if (!db) { $("#live-t").textContent = "sign in to claude.ai to see the data"; return; }
   wireNight();
+  wireOptimal();
+  loadOptimal(db).catch(() => { $("#opt-note").textContent = "Optimal data unavailable"; });
   loadNight(db).catch(() => { $("#night-note").textContent = "Night data unavailable"; });
   let updated = 0;
   const tick = () => {

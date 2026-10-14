@@ -19,7 +19,8 @@
       <span class="live" id="live"><i></i><span id="live-t">connecting</span></span>
     </div>
     <div class="tabs" role="tablist">
-      <button class="tab" role="tab" aria-selected="true" data-tab="night">Night</button>
+      <button class="tab" role="tab" aria-selected="true" data-tab="optimal">Optimal</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="night">Night</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="flags">Flagged</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="risk">Risk</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="sands">Sandwiches</button>
@@ -27,7 +28,37 @@
     </div>
   </header>
   <main id="main"><div class="stack">
-    <section class="stack" data-panel="night">
+    <section class="stack" data-panel="optimal">
+      <section class="stats" id="opt-stats"></section>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Pattern 1: who the optimal targets are</h2><small>one rule finds 92% of them</small></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Rule over profitable buys</th><th class="num">Buys</th><th class="num">Optimal</th><th class="num">Precision</th><th class="num">Share of all optimal</th></tr></thead><tbody id="opt-rules"></tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Profile</th><th class="num">Optimal</th><th class="num">Other profitable</th></tr></thead><tbody id="opt-profile"></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Pattern 2: which ones attackers actually take</h2><small>hot pool: buy flow in the prior 8 slots above 0.85% of the pool</small></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Pool</th><th>Size</th><th class="num">Optimal buys</th><th class="num">Sandwiched</th><th class="num">Net gain, SOL</th></tr></thead><tbody id="opt-attack"></tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Route</th><th class="num">Optimal buys</th><th class="num">Sandwiched</th></tr></thead><tbody id="opt-routes"></tbody></table></div>
+      </div>
+      <div class="toolbar">
+        <div class="fld"><span>Show</span><div class="seg" data-o="view">
+          <button aria-pressed="true" data-v="">All optimal</button><button data-v="hit">Sandwiched</button><button data-v="missed">Missed</button><button data-v="hot">Hot pool</button><button data-v="quiet">Quiet pool</button></div></div>
+        <div class="fld"><span>Sort by</span><div class="seg" data-o="sort">
+          <button aria-pressed="true" data-v="rank">Net gain</button><button data-v="size">% of MC</button><button data-v="buy">Buy size</button><button data-v="time">Newest</button></div></div>
+        <small id="opt-note">Loading the optimal targets</small>
+      </div>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th class="num">Rank</th><th>Time</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">MC SOL</th><th class="num">% of MC</th>
+          <th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Predicted gain</th><th class="num">Realistic net</th>
+          <th>Pool</th><th>Route</th><th>Status</th><th class="num">Taken SOL</th><th>Tx</th>
+        </tr></thead>
+        <tbody id="opt-rows"></tbody>
+      </table></div>
+      <div class="pager" id="opt-count"></div>
+    </section>
+
+    <section class="stack" data-panel="night" hidden>
       <section class="stats" id="night-stats"></section>
       <div class="card">
         <div class="card-h"><h2 class="card-t">Sandwiched share by buy size relative to market cap</h2><small>deciles of risk buys; label = decile floor, % of MC</small></div>
@@ -115,6 +146,7 @@
     </section>
   </div></main>
 </div>
+<script src="static/optimal.js"></script>
 <script src="static/night.js"></script>
 <script src="static/app.js"></script>
 </body>
