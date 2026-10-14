@@ -20,6 +20,7 @@ from .serve import Hub, serve
 from .store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
+EDGES = [0, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 
 
 def _clean(v):
@@ -34,6 +35,14 @@ class Stats:
         self.slots = self.skipped = self.swaps = self.flags = 0
         self.settled_flags = self.flag_hits = self.victims = self.victims_flagged = self.sandwiches = 0
         self.profit = 0.0
+        self.cal_n = [0] * len(EDGES)
+        self.cal_hit = [0] * len(EDGES)
+
+    def calibrate(self, scored: list[tuple[tuple, float]], victims: dict) -> None:
+        for key, p in scored:
+            b = max(i for i, e in enumerate(EDGES) if p >= e)
+            self.cal_n[b] += 1
+            self.cal_hit[b] += key in victims
 
     def view(self, f: Follower, scorer: Scorer, lab: Labeler, slot: int) -> dict:
         return {"slot": slot, "tip": f.tip, "lag": f.lag_slots, "uptime_s": int(time.time() - self.t0),
@@ -42,7 +51,8 @@ class Stats:
                 "victims_flagged": self.victims_flagged, "sandwiches": self.sandwiches,
                 "profit_sol": self.profit / 1e9, "threshold": scorer.threshold,
                 "bots": len([w for w in lab.att if lab.is_bot(w)]), "clock_rejects": f.clock_rejects,
-                "model": scorer.meta.get("name", "")}
+                "model_meta": {k: v for k, v in scorer.meta.items() if not isinstance(v, (dict, list))},
+                "calibration": [{"lo": e, "n": n, "hits": h} for e, n, h in zip(EDGES, self.cal_n, self.cal_hit)]}
 
 
 async def main(cfg: dict) -> None:
@@ -53,6 +63,7 @@ async def main(cfg: dict) -> None:
     runner = await serve(hub, cfg["run"]["host"], cfg["run"]["port"])
     print(f"{run_id}: http://{cfg['run']['host']}:{cfg['run']['port']}", flush=True)
     flagged_at: dict[int, set] = {}
+    scored_at: dict[int, list] = {}
     async with default_pool() as pool:
         f = Follower(pool)
         try:
@@ -76,6 +87,7 @@ async def main(cfg: dict) -> None:
                     store.flagged(rows)
                     st.flags += len(rows)
                     flagged_at[slot] = {(r["signature"], r["ev_index"]) for r in rows}
+                    scored_at[slot] = list(zip(zip(df.signature, df.ev_index), df.p.astype(float)))
                 settled, sands = lab.push(slot, blk["swaps"])
                 victims = {}
                 for x in sands:
@@ -101,6 +113,8 @@ async def main(cfg: dict) -> None:
                     keys = flagged_at.pop(s)
                     st.settled_flags += len(keys)
                     st.flag_hits += sum(k in victims for k in keys)
+                for s in [s for s in scored_at if s <= settled]:
+                    st.calibrate(scored_at.pop(s), victims)
                 store.settle(settled, victims)
                 hub.settle(settled, victims)
                 hub.stats = st.view(f, scorer, lab, slot)
