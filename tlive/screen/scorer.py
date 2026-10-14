@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 
 import lightgbm as lgb
-import numpy as np
 import pandas as pd
 
 from ..metrics.features import FEATURES, features
@@ -39,6 +38,3 @@ class Scorer:
         keep = base[base["slot"] > slot - HIST_SLOTS]
         self.hist = keep[[c for c in keep.columns if c not in FEATURES]].reset_index(drop=True)
         return new
-
-    def phi_of(self, df: pd.DataFrame) -> np.ndarray:
-        return df["phi"].to_numpy()
