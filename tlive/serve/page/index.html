@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandwich Screener</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/base.css">
+<link rel="stylesheet" href="/static/page.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="row">
+      <h1 class="name">Sandwich Screener</h1>
+      <span class="live" id="live"><i></i><span id="live-t">connecting</span></span>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="flags">Flagged</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="sands">Sandwiches</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="cal">Calibration</button>
+    </div>
+  </header>
+  <main id="main"><div class="stack">
+    <section class="stats" id="stats"></section>
+
+    <section class="stack" data-panel="flags">
+      <div class="toolbar">
+        <label class="fld"><span>Min score <b class="num" id="pmin-v"></b></span>
+          <input type="range" id="pmin" min="0" max="1" step="0.01"></label>
+        <div class="fld"><span>Venue</span><div class="seg" data-f="venue">
+          <button aria-pressed="true" data-v="">All</button><button data-v="pump">pump</button><button data-v="pumpswap">PumpSwap</button></div></div>
+        <div class="fld"><span>Side</span><div class="seg" data-f="side">
+          <button aria-pressed="true" data-v="">All</button><button data-v="buy">Buy</button><button data-v="sell">Sell</button></div></div>
+        <div class="fld"><span>Status</span><div class="seg" data-f="status">
+          <button aria-pressed="true" data-v="">All</button><button data-v="pending">Pending</button><button data-v="sandwiched">Sandwiched</button><button data-v="clean">Clean</button></div></div>
+        <button class="btn" id="pause" aria-pressed="false">Pause</button>
+      </div>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th>Time</th><th class="num">Slot</th><th>Venue</th><th>Side</th><th class="num">SOL</th>
+          <th class="num">Pool SOL</th><th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Impact / fee</th>
+          <th class="num">MESP SOL</th><th class="num">Score</th><th>Route</th><th class="num">CU price</th><th class="num">Tip</th>
+          <th>Status</th><th>Tx</th>
+        </tr></thead>
+        <tbody id="flags"></tbody>
+      </table></div>
+      <div class="pager" id="flags-n"></div>
+    </section>
+
+    <section class="stack" data-panel="sands" hidden>
+      <div class="tbl-wrap tbl-scroll"><table>
+        <thead><tr>
+          <th>Time</th><th class="num">Slot</th><th>Venue</th><th>Pool</th><th>Attacker</th><th class="num">Victims</th>
+          <th class="num">Flagged</th><th class="num">Victim SOL</th><th class="num">Profit SOL</th>
+        </tr></thead>
+        <tbody id="sands"></tbody>
+      </table></div>
+    </section>
+
+    <section class="stack" data-panel="cal" hidden>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Hit rate by score</h2><small id="cal-n"></small></div>
+        <div class="bars" id="cal"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Model</h2></div>
+        <dl class="kv" id="model"></dl>
+      </div>
+    </section>
+  </div></main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
