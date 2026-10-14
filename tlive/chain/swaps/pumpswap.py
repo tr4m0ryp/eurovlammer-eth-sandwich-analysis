@@ -6,8 +6,8 @@ Instruction args (after the 8-byte discriminator), first account = pool, fifth =
     sell / sell_v2                   base_amount_in, min_quote_amount_out   -> exact-in sell
 
 Event body offsets (verified in trenches ``src.ingest.pumpswap.events`` against token balances):
-base amount 8, pool base/quote reserves PRE 40/48, curve-side quote 56, lp bps 64, protocol bps
-80, pool 112, user 144, coin-creator bps 336. The pool prices against ``balance + virtual
+base amount 8, pool base/quote reserves PRE 40/48, sell output 56, lp bps/fee 64/72, protocol bps
+80, buy pool intake 96, pool 112, user 144, coin-creator bps 336. The pool prices against ``balance + virtual
 quote`` since InitBoost, so the effective quote reserve is recovered from the swap itself:
 ``Q = q (B - b) / b`` on a buy, ``Q = q (B + b) / b`` on a sell.
 """
@@ -52,7 +52,10 @@ def decode(ixs: list[Ix], signature: str, slot: int, tx_index: int) -> list[Swap
             arg = pending.pop(0) if pending else None
             if arg is None or arg[5] != WSOL:
                 continue                               # non-SOL quote, or unpaired
-            b, big_b, q = _u64(body, 8), _u64(body, 40), _u64(body, 56)
+            b, big_b = _u64(body, 8), _u64(body, 40)
+            # curve-side quote: a buy's pool intake minus the lp fee (offset 56 holds the GROSS
+            # spend on exact-in buys, the net on exact-out buys); a sell's raw output at 56.
+            q = _u64(body, 96) - _u64(body, 72) if is_buy else _u64(body, 56)
             if b == 0 or q == 0 or (is_buy and b >= big_b):
                 continue
             q_eff = q * (big_b - b) / b if is_buy else q * (big_b + b) / b
