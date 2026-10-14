@@ -7,6 +7,7 @@ slot is delivered as an empty block so the order never stalls on it.
 from __future__ import annotations
 
 import asyncio
+import multiprocessing as mp
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict
@@ -49,7 +50,8 @@ def decode_block(raw: bytes | None, slot: int) -> dict:
 class Follower:
     def __init__(self, pool: RpcPool, workers: int = 3, start_lag: int = 4):
         self.pool = pool
-        self.exec = ProcessPoolExecutor(workers)
+        # forkserver: workers must not inherit the web server's listening socket
+        self.exec = ProcessPoolExecutor(workers, mp_context=mp.get_context("forkserver"))
         self.start_lag = start_lag
         self.tip = 0
         self.next_slot = 0
