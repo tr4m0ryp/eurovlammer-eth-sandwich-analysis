@@ -37,12 +37,27 @@ function renderAll() {
 
 function renderStats() {
   const sv = S.stats.strict_vis || {};
-  const key = `${sv.n}|${sv.strict}`;
+  const rr = S.stats.risk_rejects || {};
+  const nReject = Object.values(rr).reduce((a, b) => a + b, 0);
+  const key = `${sv.n}|${sv.strict}|${S.stats.risk_safe || 0}|${nReject}`;
   if (key === S.statsKey) return;
   S.statsKey = key;
+  const token = (rr.freeze_authority || 0) + (rr.mint_authority || 0) + (rr.transfer_hook || 0)
+              + (rr.non_transferable || 0) + (rr.transfer_fee || 0);
   $("#strict-live-stats").innerHTML = [
     stat("Visible + sandwichable", fmt.int(sv.n || 0), "passed visibility + interest filters"),
     stat("Strict (budget)", fmt.int(sv.strict || 0), `0.5 SOL budget, ROI >= ${fmt.pct(0.01)}, front <= 0.5 SOL`),
+    stat("Risk-safe", fmt.int(S.stats.risk_safe || 0), "passed the safety + risk gate"),
+    stat("Risk-rejected", fmt.int(nReject),
+         `slippage ${rr.slippage || 0} · confidence ${rr.low_confidence || 0} · priority fee ${rr.high_priority_fee || 0} · token ${token}`),
+  ].join("");
+  $("#risk-kv").innerHTML = [
+    kv("Risk-safe", fmt.int(S.stats.risk_safe || 0)),
+    kv("Rejected", fmt.int(nReject)),
+    kv("Slippage (κ > 5% pool)", fmt.int(rr.slippage || 0)),
+    kv("Low confidence (p < 2%)", fmt.int(rr.low_confidence || 0)),
+    kv("Priority fee", fmt.int(rr.high_priority_fee || 0)),
+    kv("Token risks", fmt.int(token)),
   ].join("");
 }
 

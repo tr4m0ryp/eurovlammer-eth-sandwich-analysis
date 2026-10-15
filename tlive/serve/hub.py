@@ -25,6 +25,7 @@ class Hub:
         self.risk: deque[dict] = deque(maxlen=RECENT)
         self.visible_optimal: deque[dict] = deque(maxlen=200)
         self.strict_optimal: deque[dict] = deque(maxlen=200)
+        self.wallet: dict = {}
         self.stats: dict = {}
         self.by_key: dict[tuple[str, int], dict] = {}
         self.subs: dict[asyncio.Queue, frozenset[str] | None] = {}
@@ -81,6 +82,10 @@ class Hub:
         if rows:
             self.strict_optimal.extend(rows)
             self.publish("strict", rows)
+
+    def set_wallet(self, state: dict) -> None:
+        """Snapshot of the allocation engine for ``/api/snapshot`` (the stream carries typed events)."""
+        self.wallet = state
 
     def settle(self, slot: int, victims: dict) -> None:
         changed = []
