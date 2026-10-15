@@ -91,18 +91,9 @@ def slack(s: Swap, x: float, y: float) -> float:
     return out / s.limit - 1 if s.limit > 1 else INF
 
 
-def exposure(s: Swap, x: float | None = None, y: float | None = None) -> Exposure:
-    """Exposure of ``s`` at state (x, y), its own pre-state by default, with 5 SOL capital cap."""
-    return _exposure(s, CAPITAL_LAMPORTS, x, y)
-
-
-def exposure_budget(s: Swap, budget_lamports: float, x: float | None = None, y: float | None = None) -> Exposure:
-    """Exposure with a custom capital budget (lamports) instead of the default 5 SOL cap."""
-    return _exposure(s, budget_lamports, x, y)
-
-
-def _exposure(s: Swap, capital: float, x: float | None = None, y: float | None = None) -> Exposure:
-    """Exposure of ``s`` at state (x, y), its own pre-state by default, capped at ``capital`` lamports."""
+def exposure(s: Swap, x: float | None = None, y: float | None = None, capital: float = CAPITAL_LAMPORTS) -> Exposure:
+    """Exposure of ``s`` at state (x, y), its own pre-state by default, with the front leg capped at
+    ``capital`` lamports (the 5 SOL attacker by default; the strict screener passes its own budget)."""
     x = s.x_pre if x is None else x
     y = s.y_pre if y is None else y
     r = s.fee_bps / 1e4
