@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import deque
 
 from ...chain.swaps.model import Swap
-from ...metrics.exposure import exposure_budget
+from ...metrics.exposure import exposure
 from .tier import interesting, out_row, tier
 
 BUDGET_LAMPORTS = 500_000_000   # 0.5 SOL, about 100 USDT
@@ -59,7 +59,7 @@ class StrictVisibility:
                 continue
             self.n_visible += vis == "visible"
             try:
-                e = exposure_budget(_swap(r), float(self.budget))
+                e = exposure(_swap(r), capital=float(self.budget))
             except (ArithmeticError, ValueError):
                 continue
             if e.mesp < MIN_PROFIT_LAMPORTS or not 0 < e.front <= self.budget or e.mesp / e.front < MIN_ROI:
