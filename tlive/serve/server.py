@@ -69,15 +69,13 @@ def app(hub: Hub) -> web.Application:
                 except asyncio.TimeoutError:
                     await resp.write(b": ping\n\n")
                     continue
-                chunk = []
-                while msg is not None:
-                    chunk.append(b"data: " + msg + b"\n\n")
-                    msg = q.get_nowait() if not q.empty() else b""     # drain a backlog in one write
-                    if msg == b"":
-                        break
-                if chunk:
-                    await resp.write(b"".join(chunk))
-                if msg is None:                  # hub closed: the screener is shutting down
+                msgs = [msg]
+                while msgs[-1] is not None and not q.empty():    # drain a backlog in one write
+                    msgs.append(q.get_nowait())
+                data = b"".join(b"data: " + m + b"\n\n" for m in msgs if m is not None)
+                if data:
+                    await resp.write(data)
+                if msgs[-1] is None:             # hub closed: the screener is shutting down
                     break
         except (ConnectionResetError, asyncio.CancelledError):
             pass
