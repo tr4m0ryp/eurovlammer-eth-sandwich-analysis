@@ -1,4 +1,4 @@
-// Page boot: formatters and shared helpers for the strict screener live page.
+// Shared helpers: element lookup, number formatters and the stat card.
 "use strict";
 const $ = (s) => document.querySelector(s);
 
