@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
+import signal
 import time
 import tomllib
 from pathlib import Path
@@ -101,13 +102,10 @@ async def main(cfg: dict) -> None:
                     scored_at[slot] = list(zip(zip(df.signature, df.ev_index), df.p.astype(float)))
                     buys = df[df.is_buy][[c for c in RISK_KEEP if c in df.columns]]
                     risk.add(slot, [{k: _clean(v) for k, v in r.items()} for r in buys.to_dict("records")])
-                    # Full data for visibility books (needs kind, amount, limit for MESP recompute)
-                    vis_raw = [{k: _clean(v) for k, v in r.items()} for r in df[df.is_buy].to_dict("records")]
-                    vis.add(slot, f.lag_slots, vis_raw)           # stats only, not published
-                    sv_rows = sv.add(slot, f.lag_slots, vis_raw)
-                    for sr in sv_rows:
-                        hub.strict_optimal.append(sr)
-                        hub.publish("strict", sr)
+                    # the strict book recomputes exposure, so it needs the raw buy (kind, amount, limit)
+                    buys_all = [{k: _clean(v) for k, v in r.items()} for r in df[df.is_buy].to_dict("records")]
+                    vis.add(slot, f.lag_slots, buys_all)          # tier counts only
+                    hub.add_strict(sv.add(slot, f.lag_slots, buys_all))
                 settled, sands = lab.push(slot, blk["swaps"])
                 for x in sands:
                     if not lab.is_bot(x.attacker):
@@ -127,8 +125,7 @@ async def main(cfg: dict) -> None:
                             "victim_sol": sum(v.sol for v in x.victims)}
                     store.sandwich(list(srow.values()) + [int(time.time() * 1000)],
                                    [[x.key, v.signature, v.ev_index, v.slot, v.sol, None, f_] for v, f_ in zip(x.victims, fl)])
-                    hub.sandwiches.append(srow)
-                    hub.publish("sandwich", srow)
+                    hub.add_sandwich(srow)
                 done = [s for s in flagged_at if s <= settled]
                 for s in done:
                     keys = flagged_at.pop(s)
@@ -143,8 +140,8 @@ async def main(cfg: dict) -> None:
                 hub.add_risk(settled_risk)
                 store.settle(settled, victims)
                 hub.settle(settled, victims)
-                hub.stats = st.view(f, scorer, lab, slot) | {"risk": risk.stats(), "vis": vis.stats(), "strict_vis": sv.stats()}
-                hub.publish("stats", hub.stats)
+                hub.set_stats(st.view(f, scorer, lab, slot) | {"risk": risk.stats(), "vis": vis.stats(),
+                                                               "strict_vis": sv.stats()})
                 if time.time() - last_push >= PUSH_EVERY_S:
                     last_push = time.time()
                     snapshot(hub, push_path)
@@ -154,7 +151,20 @@ async def main(cfg: dict) -> None:
             await runner.cleanup()
 
 
+async def _until_term(coro) -> None:
+    """Turn SIGTERM into a cancel, so ``main``'s cleanup runs and the decode workers are shut down
+    (a bare SIGTERM kills the process and orphans every forkserver worker)."""
+    task = asyncio.ensure_future(coro)
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, task.cancel)
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", type=Path, default=ROOT / "configs" / "live.toml")
-    asyncio.run(main(tomllib.loads(ap.parse_args().config.read_text())))
+    asyncio.run(_until_term(main(tomllib.loads(ap.parse_args().config.read_text()))))
