@@ -27,6 +27,10 @@ def _topics(req: web.Request, key: str) -> frozenset[str] | None:
     return frozenset(t for t in raw.split(",") if t) or None
 
 
+async def _close(hub: Hub) -> None:
+    hub.close()
+
+
 def app(hub: Hub) -> web.Application:
     async def index(_):
         return web.FileResponse(PAGE / "index.html", headers=NO_CACHE)
@@ -65,10 +69,16 @@ def app(hub: Hub) -> web.Application:
                 except asyncio.TimeoutError:
                     await resp.write(b": ping\n\n")
                     continue
-                chunk = [b"data: " + msg + b"\n\n"]
-                while not q.empty():             # drain a backlog in one write
-                    chunk.append(b"data: " + q.get_nowait() + b"\n\n")
-                await resp.write(b"".join(chunk))
+                chunk = []
+                while msg is not None:
+                    chunk.append(b"data: " + msg + b"\n\n")
+                    msg = q.get_nowait() if not q.empty() else b""     # drain a backlog in one write
+                    if msg == b"":
+                        break
+                if chunk:
+                    await resp.write(b"".join(chunk))
+                if msg is None:                  # hub closed: the screener is shutting down
+                    break
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         finally:
@@ -76,6 +86,7 @@ def app(hub: Hub) -> web.Application:
         return resp
 
     a = web.Application()
+    a.on_shutdown.append(lambda _: _close(hub))
     a.router.add_get("/", index)
     a.router.add_get("/api/snapshot", snapshot)
     a.router.add_get("/api/stream", stream)

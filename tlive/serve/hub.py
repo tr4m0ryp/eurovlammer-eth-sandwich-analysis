@@ -39,6 +39,11 @@ class Hub:
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self.subs.pop(q, None)
 
+    def close(self) -> None:
+        """End every open stream; a stream that never ends holds the server's cleanup forever."""
+        for q in self.subs:
+            q.put_nowait(None)
+
     def publish(self, kind: str, data) -> None:
         targets = [q for q, t in self.subs.items() if (t is None or kind in t) and q.qsize() < QUEUE_CAP]
         if not targets:
