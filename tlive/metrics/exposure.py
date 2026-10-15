@@ -92,7 +92,17 @@ def slack(s: Swap, x: float, y: float) -> float:
 
 
 def exposure(s: Swap, x: float | None = None, y: float | None = None) -> Exposure:
-    """Exposure of ``s`` at state (x, y), its own pre-state by default."""
+    """Exposure of ``s`` at state (x, y), its own pre-state by default, with 5 SOL capital cap."""
+    return _exposure(s, CAPITAL_LAMPORTS, x, y)
+
+
+def exposure_budget(s: Swap, budget_lamports: float, x: float | None = None, y: float | None = None) -> Exposure:
+    """Exposure with a custom capital budget (lamports) instead of the default 5 SOL cap."""
+    return _exposure(s, budget_lamports, x, y)
+
+
+def _exposure(s: Swap, capital: float, x: float | None = None, y: float | None = None) -> Exposure:
+    """Exposure of ``s`` at state (x, y), its own pre-state by default, capped at ``capital`` lamports."""
     x = s.x_pre if x is None else x
     y = s.y_pre if y is None else y
     r = s.fee_bps / 1e4
@@ -100,9 +110,9 @@ def exposure(s: Swap, x: float | None = None, y: float | None = None) -> Exposur
     if s.amount is None or x <= 0 or y <= 0:
         return Exposure(sl, 0.0, 0.0, False)
     if s.is_buy:
-        f, hi = _profit_buy(s, r, x, y), CAPITAL_LAMPORTS
-    else:   # tokens worth at most CAPITAL_LAMPORTS of curve output
-        cap = y * CAPITAL_LAMPORTS / (x - CAPITAL_LAMPORTS) if CAPITAL_LAMPORTS < x else 0.5 * y
+        f, hi = _profit_buy(s, r, x, y), capital
+    else:   # tokens worth at most capital of curve output
+        cap = y * capital / (x - capital) if capital < x else 0.5 * y
         f, hi = _profit_sell(s, r, x, y), min(0.5 * y, cap)
     if not f(0.0)[1]:
         return Exposure(sl, 0.0, 0.0, True)
