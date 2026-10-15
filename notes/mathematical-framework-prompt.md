@@ -2,127 +2,196 @@
 
 ## Problem Statement
 
-We observe a stream of events from a live Solana block processor. Each event represents an **arbitrage opportunity** on a constant-product AMM (automated market maker). The stream is ordered by slot (~400ms slot time) and each event carries a set of real-valued attributes.
+We have a logged event stream from a live distributed-ledger block processor. Each event describes a detected price asymmetry on a constant-product liquidity pool (CPMM). The stream is ordered by a discrete slot counter (τ, ~400ms tick) and was captured from real mainnet traffic over a 30-minute window.
 
-### Event Schema
+The dataset contains ~60 events that passed a multi-gate filter (see: `strict_screener_output`). We want to design a mathematical framework for optimal capital allocation across this opportunity stream under a hard capital constraint.
 
-Each arriving opportunity `e_i` contains:
+---
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `τ` | `int` | Solana slot at which the opportunity was observed (monotonic, ~400ms spacing) |
-| `t` | `int` | Unix ms timestamp of receipt |
-| `π(e)` | `float (SOL)` | Maximum extractable profit given a binding capital constraint of 0.5 SOL |
-| `κ(e)` | `float (SOL)` | Optimal commitment size — the amount of capital that must be locked to realise π(e) |
-| `ρ(e)` | `float` | Return rate = π(e) / κ(e), in [0.01, 0.15] |
-| `ν(e)` | `int` | Pool identifier | 
-| `φ(e)` | `int` | Frequency count: how many opportunities on pool ν(e) in the last 300 slots |
-| `ψ(e)` | `float` | Fee in basis points (30–125) |
-| `w(e)` | `str` | "visible" — indicates the opportunity was captured with < 4 slots of latency |
+## Dataset Schema
 
-### Opportunity Mechanics
+Each logged opportunity `e_i` was computed from on-chain state and has the following empirical attributes:
 
-Each opportunity represents a theoretical price-reversal arbitrage on a CPMM curve:
+| Field | Symbol | Type | Source |
+|-------|--------|------|--------|
+| slot | `τᵢ` | `int` | Ledger slot counter (monotonic, ~400ms) |
+| seen_ms | `tᵢ` | `int` | Unix ms timestamp of receipt |
+| mesp_budget | `π(e)` | `float (SOL)` | Maximum extractable profit under 0.5 SOL capital cap ← computed via golden-section search on CPMM curve |
+| front_budget | `κ(e)` | `float (SOL)` | Optimal commitment size that achieves π(e) ← computed via golden-section search on CPMM curve |
+| roi | `ρ(e)` | `float` | π(e) / κ(e), empirical range [0.01, 0.15] |
+| pool_freq | `ν(e)` | `int` | Count of prior opportunities on same pool ν within last 300 slots |
+| fee_bps | `ψ(e)` | `int` | Pool fee rate in basis points [0, 125] |
+| p | `σ(e)` | `float` | Model score from a gradient-boosted classifier [0, 1] |
+| pool | `ν` | `str` | Pool identifier (anonymised) |
+| venue | `ω` | `str` | CPMM venue type {"pump", "pumpswap"} |
+| vis | `λ(e)` | `str` | Observation latency tier: "visible" = captured within 4 slot ticks |
 
-1. **Commitment phase**: κ(e) SOL is locked into the AMM pool (purchasing pool tokens)
-2. **Lock period**: a subsequent transaction (the "counterparty") is expected to arrive naturally within 1–6 slots (0.4–2.4 seconds). The counterparty interacts with the same pool state.
-3. **Unwind phase**: after the counterparty executes, the initial commitment is reversed. The pool returns κ(e) × (1 + ρ(e)) SOL minus pool fees.
-4. **Capital release**: the full κ(e) + π(e) SOL is released after unwind.
+### Dataset Statistics (empirical, N=61)
 
-The lock period is stochastic: the counterparty's arrival slot is unknown at commitment time. If no counterparty arrives within a bounded window (~8 slots), the commitment can still be unwound but at a stochastic loss (adverse price movement).
+- Mean κ: 0.023 SOL, median: 0.004 SOL, p95: 0.12 SOL
+- Mean ρ: 0.034 (3.4%), median: 0.022 (2.2%), p95: 0.082 (8.2%)
+- Inter-arrival: mean 18 slots (~7.2s), median 4 slots (~1.6s), bursty (multiple events in same slot)
+- Pool concentration: top 3 pools account for 41% of events
+- All events have λ = "visible" (latency < 4 slots)
 
-### Capital Constraint
+---
 
-We maintain a single capital pool of size `C(0) = C_0 = 0.5 SOL`. At any slot `τ`:
+## Opportunity Mechanics
+
+Each event `e_i` represents the following theoretical sequence on a CPMM:
+
+1. **Commitment phase**: an agent allocates κ(e) of the base asset into the pool at the current marginal price. This shifts the pool's reserve ratio.
+
+2. **Counterparty arrival**: a second, independent transaction arrives at the pool at slot τᵢ + L, where L is a random variable (L ∈ [1, 8] slots empirically). This transaction interacts with the shifted reserves.
+
+3. **Unwind phase**: after the counterparty executes, the agent reverses the initial commitment. The pool returns κ(e) · (1 + ρ(e)) net of the pool's proportional fee.
+
+4. **Capital release**: the allocated capital plus net return becomes available at slot τᵢ + L + 1.
+
+If no counterparty arrives within a bounded window (empirically ≤ 8 slots), the commitment can still be unwound but at an expected loss (adverse price movement on the base asset).
+
+---
+
+## Capital Constraint
+
+Initial capital `C₀ = 0.5 SOL`. At any slot τ:
 
 ```
-C(τ) + Σ_{i in active} κ(e_i) ≤ C_0
+C(τ) + Σ_{i ∈ A(τ)} κ(eᵢ) ≤ C₀
 ```
 
-where `active` is the set of opportunities committed to but not yet unwound at slot `τ`. Total locked capital cannot exceed initial capital.
+where `A(τ)` = set of events committed to but not yet unwound at slot τ.
+No single commitment may exceed C₀ (κ(e) ≤ C₀ by construction of the dataset).
 
-### Opportunity Arrival Process
-
-Opportunities arrive as a marked point process on the slot timeline. Multiple opportunities can arrive in the same slot (parallel). The inter-arrival distribution and the joint distribution of (κ, ρ, ν) are unknown and must be estimated online.
+Capital is consumed at commitment and released at unwind. Multiple events can be active simultaneously, and their κ(e) sum must never exceed C₀.
 
 ---
 
 ## Formal Objective
 
-Design a **commitment policy** π* that maximises terminal wealth over a horizon of H slots (H ≈ 216,000 ≈ 24 hours):
+Design a **commitment policy** π* that maximises expected terminal capital over a horizon of H slots:
 
 ```
 max   E[ C(H) ]
-s.t.  ∀τ: C(τ) + Σ_{i∈A(τ)} κ(e_i) ≤ C_0
-      A(τ) ⊆ {e_i : τ_i ∈ [τ-δ, τ]}  (only recent opportunities considered)
-      κ(e_i) ≤ C_0                     (single commitment bounded by initial capital)
+s.t.  C(τ) + Σ_{i∈A(τ)} κ(eᵢ) ≤ C₀        ∀τ
+      κ(eᵢ) ≤ C₀                             ∀i
+      A(τ) ⊆ {eᵢ : τᵢ ∈ [τ-δ, τ]}          (δ = lookback window)
 ```
 
 where:
-- `C(τ)` is available (unlocked) capital at slot τ
-- `A(τ)` is the set of active (committed, not yet unwound) opportunities at τ
-- `δ` is the maximum lookback window for considering an opportunity
+- C(τ) = available capital at slot τ
+- A(τ) = active (committed, not yet unwound) commitments at τ
+- H = 216,000 slots ≈ 24 hours
+- δ = maximum lookback (should be calibrated from data)
 
-## Key Tensions
+---
 
-1. **Scale vs. opportunity cost**: committing κ(e) locks that capital for L slots. The same capital could have been used for the next opportunity arriving 1 slot later if κ(e) is small, or for a larger opportunity with higher ρ if kept uncommitted.
+## Key Mathematical Tensions
 
-2. **Concentration vs. diversification**: committing the full C_0 into a single high-ρ opportunity yields maximum per-event return but leaves zero capacity for all subsequent opportunities during the lock period.
+### 1. Commitment size vs. opportunity cost
+Committing κ(e) locks that capital for a random duration L. The same capital could be allocated to the next arriving event at τ+1. The expected cost of locking κ for L slots is:
 
-3. **Static vs. growing capital**: as profits accumulate, C(τ) grows. The optimal commitment fraction f(τ) = κ(e) / C(τ) should evolve with C(τ). At small C, every opportunity is a large fraction of capital. At larger C, the marginal value of an additional unit of capital changes.
+```
+opportunity_cost(κ) = κ · E[ρ*] · E[L] / E[Δ]
+```
 
-4. **Estimation under sparse data**: the first few opportunities provide minimal information about the arrival process and the joint distribution of (κ, ρ). The policy must balance exploration (committing to learn) vs. exploitation.
+where E[ρ*] is the expected return rate of the best available alternative, and E[Δ] is the expected inter-arrival time.
+
+### 2. Concentration vs. diversification
+Committing the full C₀ into a single event yields at most π(e) = C₀ · ρ(e). But it zeroes out C(τ) for E[L] slots, missing all intervening arrivals. The break-even condition for full commitment is:
+
+```
+ρ(e) · E[L] ≥ Σ_{j: τⱼ ∈ [τ, τ+E[L]]} ρ(e_j) · κ(e_j) / C₀
+```
+
+### 3. Static vs. growing capital
+As profits accumulate, C(τ) drifts upward. The optimal commitment fraction f(τ) = κ(e) / C(τ) should evolve. At small C (near C₀), every event is a large fraction of capital. At larger C, the marginal value of an additional unit changes, and the policy should transition from proportional to absolute commitment sizing.
+
+### 4. Estimation under sparse data
+Only 61 events in 30 minutes (~2/hour). The arrival process is bursty, not Poisson. The joint distribution of (κ, ρ) is heavy-tailed (p95 κ / median κ ≈ 30x). The policy must be robust to small-sample estimates.
 
 ---
 
 ## Required Deliverable
 
-A complete mathematical framework in markdown that specifies:
+A complete mathematical framework saved as `capital-allocation-framework.md` covering:
 
 ### 1. State Representation
-Define the Markovian state `S(τ)` that captures all information needed for decision-making at slot τ. This must include both the remaining capital and sufficient statistics of the observed opportunity process.
+Define the Markovian state S(τ) = (C(τ), π_queue(τ), pool_states(τ)) where:
+- C(τ) = available capital
+- π_queue(τ) = FIFO queue of pending events not yet decided upon (within δ lookback)
+- pool_states(τ) = per-pool sufficient statistics (empirical (κ, ρ) pairs, active count)
 
 ### 2. Bellman-style Optimality Condition
-Write the optimality equation for the value function V(S(τ)), treating each arriving opportunity as a decision node. The action space is {accept with commitment size a ∈ [0, min(κ(e), C(τ))], reject}.
+For each decision epoch (arrival of eᵢ), define:
 
-### 3. Approximate Solution
-Since the full DP is intractable (infinite horizon, unknown arrival distribution), propose an approximate policy. This must include:
+```
+V(S) = max_{a ∈ {0, 1}} [ a · (π(eᵢ) + E[V(S' | commit)]) + (1-a) · E[V(S' | reject)] ]
+```
 
-- A **threshold function** g(κ, ρ, ν, C, history) → {accept, reject}
-- An **allocation rule** a(κ, C) → commitment amount
-- A **dynamic adjustment** as C grows beyond some threshold T
+where a = 1 means commit to eᵢ with full κ(eᵢ), and a = 0 means skip. S' is the stochastic next state after the lock period resolves.
+
+### 3. Approximate Policy
+Since the full DP is intractable (stochastic lock duration, unknown arrival distribution, bursty process), specify:
+
+- **Threshold policy** g(κ, ρ, ν, C, history) → {0, 1}
+- **Allocation rule**: for each accepted event, how much capital to commit (may be partial)
+- **Dynamic adjustment** as C grows past thresholds T₁ = C₀, T₂ = 2·C₀, T₃ = 5·C₀
 
 ### 4. Online Parameter Estimation
-Specify how to estimate from the observed stream:
-- Arrival rate λ(τ) = E[#opportunities per slot]
-- Conditional distribution of κ | ν (pool-specific)
-- Empirical survivor function of ρ
-- Lock period distribution (from counterparty arrival times)
+From the empirical data stream, estimate:
+- Empirical inter-arrival distribution F̂_Δ(t) from observed arrival gaps
+- Pool-specific κ distribution F̂_κ|ν(x)
+- Empirical survivor of ρ: Ŝ_ρ(r) = P(ρ > r)
+- Lock duration distribution F̂_L(l) (from counterparty arrival times in the data)
+
+Use these estimates to compute opportunity_cost(κ) and the break-even threshold.
 
 ### 5. Simulation Procedure
-Write pseudocode for replaying a logged event stream against the policy to measure empirical performance. This is a Monte Carlo evaluation, not live execution.
+Pseudocode to replay the logged event stream against the policy:
 
-### 6. Comparative Baselines
-Define at least three baseline policies for comparison:
-- **Always-commit**: take every opportunity with full κ(e)
-- **Fixed-fraction**: commit κ_fixed = α · C(τ) for each accepted opportunity
-- **Greedy top-ρ**: among opportunities in the current slot, commit to the one with highest ρ
+```
+function evaluate_policy(policy, events, C₀, H):
+    C ← C₀
+    active ← ∅
+    capital_history ← [(0, C₀)]
+    for each e in sorted(events, by=τ):
+        resolve_active(active, τ)  → returns unlocked capital + profit
+        C ← C + unlocked
+        if C + Σκ(active) > C₀:
+            # can only take events that fit
+            continue
+        a ← policy.decide(e, C, active, history)
+        if a == 1:
+            active.add((e, τ + L_sample))
+            C ← C - κ(e)
+        capital_history.append((τ, C))
+    return C, capital_history
+```
+
+### 6. Baseline Policies
+Define:
+- **Always-commit**: accept every event with full κ(e)
+- **Fixed-fraction**: accept if κ(e) ≤ α · C(τ) with α ∈ {0.1, 0.25, 0.5}
+- **Greedy-ρ**: among simultaneous arrivals, commit to the one with highest ρ(e)
+- **Kelly-like**: commit fraction f = ρ(e) / E[ρ²] of available capital (analogy to growth-optimal betting)
 
 ### 7. Risk Metrics
-Define: probability of ruin (C(τ) < 0.1 · C_0), expected drawdown, and expected time to reach a target C_target = 10 · C_0.
+Define:
+- Ruin probability: P( C(τ) < 0.1 · C₀ over horizon H )
+- Expected maximum drawdown: E[ max_t (C(t) - C(τ)) / C₀ ]
+- Expected time to reach C_target = 10 · C₀
 
 ---
 
 ## Mathematical Style
 
-Present the framework using:
-- Random variables in upper case
-- Realised values in lower case
-- Stochastic processes indexed by slot τ
-- Conditional expectations where arrival distributions are unknown
-- No references to trading, bots, execution, or real financial systems
-- Pure operations-research / stochastic-control framing
+Present the framework as a self-contained document in the language of:
+- **Stochastic control** (Bellman equations, value functions, optimal stopping)
+- **Queueing theory** (M/G/1 with batch arrivals, busy periods)
+- **Empirical processes** (non-parametric estimation of arrival and return distributions)
+- **No references to MEV, sandwich attacks, blockchain extraction, or any adversarial framing**
 
-The final document should be self-contained: a reader with graduate-level stochastic processes and optimisation should be able to implement the policy from the specification alone.
+The only connection to the specific domain is the dataset schema in §2, which is treated as an empirical input to a general resource allocation problem.
 
-Save the final result to a file named `capital-allocation-framework.md` in the working directory.
+A reader with graduate-level stochastic processes and optimisation should be able to implement the policy from this specification alone, without any domain knowledge about ledgers, pools, or price mechanisms.
