@@ -28,12 +28,12 @@ class Allocator:
     ADVERSE = 0.01        # fractional adverse-movement loss when the lock expires with no counterparty
     RESOLVE_DELAY = 15    # slots to wait before resolving: the screener settles a victim ~14 slots after
                           # its buy (SETTLE = WINDOW_SLOTS + 6 = 14), so we must look it up after that.
-    BETA = 0.004          # pool-crowding penalty, per prior hit, per (1 - p)
+    BETA = float(os.environ.get("TLIVE_BETA", "0.004"))       # pool-crowding penalty, per prior hit, per (1 - p)
     SAME_POOL = 0.01      # extra penalty when the pool already has an active position
-    THETA0 = 0.012        # expected-net-return threshold at the cap (scarce)
-    THETA_INF = 0.004     # threshold as the wallet grows large (opportunity-cost floor)
+    THETA0 = float(os.environ.get("TLIVE_THETA0", "0.012"))   # expected-net-return threshold at the cap (scarce)
+    THETA_INF = float(os.environ.get("TLIVE_THETA_INF", "0.004"))  # threshold as the wallet grows large
     T1, T2, T3 = 1.0, 2.0, 5.0     # wallet tiers, multiples of C0
-    ALPHA_SCARCE = 0.5    # scarce tier: one position <= this share of the wallet
+    ALPHA_SCARCE = float(os.environ.get("TLIVE_ALPHA_SCARCE", "0.5"))  # scarce tier: one position <= this share
     WIN_RATE = 0.5        # P(we win the race) given a real sandwich landed on the victim
     CAPTURE_FRACTION = 0.25  # realised share of predicted MESP (calibration: 11-27% above 0.01 SOL)
     TIP_LAMPORTS = 100_000    # Jito tip paid per win
