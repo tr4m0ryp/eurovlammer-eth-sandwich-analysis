@@ -26,12 +26,12 @@ def build(out: Path = ROOT / "data" / "artifact" / "sandwich_screener.html") -> 
     body = re.search(r"<body>(.*)</body>", html, re.S).group(1)
     head = re.sub(r'<meta charset[^>]*>\s*|<meta name="viewport"[^>]*>\s*', "", head)
     head = head.replace("<title>", '<meta name="claude:viewport-fit-sides" content="cover">\n<title>', 1)
-    css = (PAGE / "base.css").read_text() + "\n" + (PAGE / "page.css").read_text()
+    css = "\n".join((PAGE / m).read_text() for m in re.findall(r'<link rel="stylesheet" href="static/([^"]+)">', head))
     css += "\n.app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }\n"
     head = re.sub(r'<link rel="stylesheet" href="static/[^"]+">\s*', "", head)
     head = head.replace("</title>", "</title>\n<style>\n" + css + "</style>", 1)
-    for js in ("app.js", "optimal.js", "visibility.js", "exposure.js", "boot.js"):
-        body = body.replace(f'<script src="static/{js}"></script>', "<script>\n" + (PAGE / js).read_text() + "</script>")
+    body = re.sub(r'<script src="static/([^"]+)"></script>',
+                  lambda m: "<script>\n" + (PAGE / m.group(1)).read_text() + "</script>", body)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(head.strip() + "\n" + body.strip() + "\n")
     return out
