@@ -6,7 +6,10 @@ Both the snapshot and the stream take a topic list, so a page only pays for what
 from __future__ import annotations
 
 import asyncio
+import hmac
+import os
 import re
+import secrets
 from pathlib import Path
 
 import orjson
@@ -21,6 +24,39 @@ NO_CACHE = {"Cache-Control": "no-cache"}     # the page changes under a running 
 PARTS = {"flags": ("flags", 120), "sandwiches": ("sandwiches", 50), "risk": ("risk", 120),
          "visible": ("visible_optimal", 120), "strict": ("strict_optimal", 120)}
 
+# Shared passcode gate. The passcode never leaves the server; a successful login sets an opaque
+# ``AUTH_COOKIE`` session cookie that the page, the snapshot and the SSE stream all present.
+PASSCODE = os.environ.get("TLIVE_PASSCODE", "REDACTED_PASSCODE")
+AUTH_COOKIE = "tlive_auth"
+LOGIN_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<style>
+ :root{color-scheme:light;--brand:oklch(0.45 0.3132 264);--fg:oklch(0.10 0.04 264);--tertiary:oklch(0.62 0.03 264);--border:oklch(0.10 0.04 264 / 0.12)}
+ *{box-sizing:border-box}
+ body{margin:0;min-height:100vh;display:grid;place-items:center;background:oklch(1 0 264);color:var(--fg);font:400 14px/20px system-ui,-apple-system,"Segoe UI",sans-serif}
+ form{width:min(360px,calc(100vw - 48px));display:grid;gap:14px;padding:28px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px oklch(0.10 0.04 264 / 0.10)}
+ h1{margin:0;font-size:18px;font-weight:600}
+ p{margin:0;color:var(--tertiary);font-size:13px;line-height:18px}
+ input{height:40px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font:inherit}
+ input:focus{outline:2px solid var(--brand);outline-offset:1px}
+ button{height:40px;border:0;border-radius:8px;background:var(--brand);color:#fff;font:600 14px/40px system-ui,sans-serif;cursor:pointer}
+ .bad{color:#c2483a;font-size:13px}
+</style>
+</head>
+<body>
+<form method="post" action="/login">
+ <h1>Strict Sandwich Targets</h1>
+ <p>This dashboard is locked. Enter the passcode to continue.</p>
+ <input type="password" name="code" placeholder="Passcode" autofocus autocomplete="current-password">
+ <button type="submit">Unlock</button>
+ __BAD__
+</form>
+</body>
+</html>"""
+
 
 def _topics(req: web.Request, key: str) -> frozenset[str] | None:
     raw = req.query.get(key, "")
@@ -32,6 +68,29 @@ async def _close(hub: Hub) -> None:
 
 
 def app(hub: Hub) -> web.Application:
+    token = secrets.token_urlsafe(32)
+
+    @web.middleware
+    async def auth(req: web.Request, handler):
+        # login and static assets are reachable without a session; everything else is gated
+        if req.path == "/login" or req.path.startswith("/static/"):
+            return await handler(req)
+        if hmac.compare_digest(req.cookies.get(AUTH_COOKIE, ""), token):
+            return await handler(req)
+        raise web.HTTPFound("/login")
+
+    async def login_page(req: web.Request):
+        bad = '<div class="bad">Wrong passcode.</div>' if "bad" in req.query else ""
+        return web.Response(text=LOGIN_HTML.replace("__BAD__", bad), content_type="text/html")
+
+    async def login_submit(req: web.Request):
+        data = await req.post()
+        if hmac.compare_digest(str(data.get("code", "")).strip(), PASSCODE):
+            resp = web.HTTPFound("/")
+            resp.set_cookie(AUTH_COOKIE, token, max_age=30 * 86400, httponly=True, samesite="Lax")
+            return resp
+        return web.HTTPFound("/login?bad=1")
+
     async def index(_):
         return web.FileResponse(PAGE / "index.html", headers=NO_CACHE)
 
@@ -47,6 +106,8 @@ def app(hub: Hub) -> web.Application:
         for part, (attr, n) in PARTS.items():
             if want is None or part in want:
                 body[part] = list(getattr(hub, attr))[-n:]
+        if want is None or "wallet" in want:
+            body["wallet"] = hub.wallet
         return web.Response(body=orjson.dumps(body, option=orjson.OPT_SERIALIZE_NUMPY),
                             content_type="application/json", headers=NO_CACHE)
 
@@ -83,8 +144,10 @@ def app(hub: Hub) -> web.Application:
             hub.unsubscribe(q)
         return resp
 
-    a = web.Application()
+    a = web.Application(middlewares=[auth])
     a.on_shutdown.append(lambda _: _close(hub))
+    a.router.add_get("/login", login_page)
+    a.router.add_post("/login", login_submit)
     a.router.add_get("/", index)
     a.router.add_get("/api/snapshot", snapshot)
     a.router.add_get("/api/stream", stream)

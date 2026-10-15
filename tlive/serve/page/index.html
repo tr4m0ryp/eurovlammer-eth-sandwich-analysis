@@ -18,10 +18,18 @@
       <h1 class="name">Strict Sandwich Targets</h1>
       <span class="live" id="live"><i></i><span id="live-t">loading</span></span>
     </div>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="strict">Strict Targets</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="wallet">Wallet</button>
+    </nav>
   </header>
   <main id="main"><div class="stack">
-    <section class="stack" data-panel="strict-live">
+    <section class="stack" data-panel="strict">
       <section class="stats" id="strict-live-stats"></section>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Risk Recognition</h2><small>safety + risk gate applied to every strict target before a commit</small></div>
+        <div class="kv" id="risk-kv"><div><dt>Risk-safe</dt><dd>—</dd></div></div>
+      </div>
       <div class="card">
         <div class="card-h"><h2 class="card-t">Budget-Constrained Screener</h2><small>0.5 SOL budget (≈100 USDT). Only transactions we can actually front-run with our capital.</small></div>
         <div class="verdict">Strict filter: visible + front-run fits budget + MESP > fees + ROI ≥ 1%. Each row is a buy we could sandwich right now with our 0.5 SOL capital.</div>
@@ -39,10 +47,36 @@
         <tbody id="strict-live-rows"></tbody>
       </table></div>
     </section>
+    <section class="stack" data-panel="wallet" hidden>
+      <section class="stats" id="wallet-stats"></section>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Capital Allocation</h2><small>0.5 SOL starting wallet, 0.5 SOL exposure cap.</small></div>
+        <div class="verdict">Simulated wallet: each strict target is scored against the allocation rule. A commit locks its κ for a random 2–8 slots, then returns κ plus a realised gain (win) or a small adverse-movement loss (empty lock).</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Active Positions</h2><small id="wallet-active-n">none</small></div>
+        <div class="tbl-wrap tbl-scroll"><table>
+          <thead><tr>
+            <th>Time committed</th><th>Pool</th><th class="num">κ (front)</th><th class="num">π (expected)</th><th class="num">Unlock in (slots)</th><th>Status</th>
+          </tr></thead>
+          <tbody id="wallet-active-rows"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2 class="card-t">Completed</h2><small id="wallet-hist-n">none</small></div>
+        <div class="tbl-wrap tbl-scroll"><table>
+          <thead><tr>
+            <th>Time committed</th><th>Time resolved</th><th>Pool</th><th class="num">κ (front)</th><th class="num">π (realized)</th><th class="num">Gain (SOL)</th><th>Status</th>
+          </tr></thead>
+          <tbody id="wallet-hist-rows"></tbody>
+        </table></div>
+      </div>
+    </section>
   </div></main>
 </div>
 <script src="static/lib/fmt.js"></script>
 <script src="static/live/strict.js"></script>
+<script src="static/live/wallet.js"></script>
 <script src="static/live/stream.js"></script>
 </body>
 </html>

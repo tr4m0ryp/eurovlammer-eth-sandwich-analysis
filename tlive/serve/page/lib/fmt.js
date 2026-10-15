@@ -15,3 +15,7 @@ const fmt = {
 function stat(label, v, s) {
   return `<div class="stat"><div class="lbl">${label}</div><div class="v">${v}</div><div class="s">${s || ""}</div></div>`;
 }
+
+function kv(label, v) {
+  return `<div><dt>${label}</dt><dd>${v}</dd></div>`;
+}

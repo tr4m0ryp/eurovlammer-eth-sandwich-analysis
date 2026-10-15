@@ -9,11 +9,20 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
+import os
 import signal
 import time
 import tomllib
 from pathlib import Path
 
+import aiohttp
+from solders.keypair import Keypair
+
+from .engine import Allocator
+from .exec import SandwichExecutor
+from .exec.keypair import load_keypair
+from .exec.risk import event_risks, gate
+from .exec.safety import check_tokens
 from .ingest.follow import Follower
 from .ingest.rpc import default_pool
 from .metrics.exposure import exposure
@@ -41,6 +50,9 @@ class Stats:
         self.slots = self.skipped = self.swaps = self.flags = 0
         self.settled_flags = self.flag_hits = self.victims = self.victims_flagged = self.sandwiches = 0
         self.profit = 0.0
+        self.exec_commits = self.exec_rejects = self.exec_errors = 0
+        self.risk_safe = 0
+        self.risk_rejects: dict[str, int] = {}
         self.cal_n = [0] * len(EDGES)
         self.cal_hit = [0] * len(EDGES)
 
@@ -56,6 +68,8 @@ class Stats:
                 "settled_flags": self.settled_flags, "flag_hits": self.flag_hits, "victims": self.victims,
                 "victims_flagged": self.victims_flagged, "sandwiches": self.sandwiches,
                 "profit_sol": self.profit / 1e9, "threshold": scorer.threshold,
+                "exec_commits": self.exec_commits, "exec_rejects": self.exec_rejects, "exec_errors": self.exec_errors,
+                "risk_safe": self.risk_safe, "risk_rejects": self.risk_rejects,
                 "bots": len(lab.bots()) - len(lab.known_bots), "clock_rejects": f.clock_rejects,
                 "model_meta": {k: v for k, v in scorer.meta.items() if not isinstance(v, (dict, list))},
                 "calibration": [{"lo": e, "n": n, "hits": h} for e, n, h in zip(EDGES, self.cal_n, self.cal_hit)]}
@@ -74,16 +88,28 @@ async def main(cfg: dict) -> None:
     risk = RiskBook()
     vis = LiveVisibility()
     sv = StrictVisibility()
+    alloc = Allocator()
+    alloc.set_victims(victims)          # settle the wallet against the real sandwich feed
+    # real executor (dry-run): signs with the configured trader keypair, else a throwaway for sim.
+    # Opt-in via TLIVE_EXEC=1: its per-event RPC calls are throttled off by default so the screener
+    # stays on the tip while it collects ground truth for the profitability assessment.
+    exec_enabled = os.environ.get("TLIVE_EXEC") == "1"
+    rpc_url = os.environ.get("ALCHEMY_RPC_URL", "") or os.environ.get("HELIUS_RPC_URL", "")
+    trader = load_keypair("TLIVE_TRADER_KEYPAIR") if os.environ.get("TLIVE_TRADER_KEYPAIR") else Keypair()
+    ex = SandwichExecutor(rpc_url, trader, live=False,
+                          rpc_fallback=os.environ.get("HELIUS_RPC_URL", "") or None)
     last_push = 0.0
     push_path = store.dir / "push" / "snapshot.json"
     async with default_pool() as pool:
-        f = Follower(pool)
+        f = Follower(pool, start_lag=1)     # follow 1 slot behind the tip (was 4): ~1.2 s less latency
+        ex_session = aiohttp.ClientSession()
         try:
             async for blk in f.blocks():
                 slot = blk["slot"]
                 st.slots += 1
                 st.skipped += blk["skipped"]
                 df = scorer.score(blk["swaps"], slot, lab.bots())
+                strict_rows = []
                 if len(df):
                     st.swaps += len(df)
                     store.swaps(df, slot)
@@ -105,7 +131,34 @@ async def main(cfg: dict) -> None:
                     # the strict book recomputes exposure, so it needs the raw buy (kind, amount, limit)
                     buys_all = [{k: _clean(v) for k, v in r.items()} for r in df[df.is_buy].to_dict("records")]
                     vis.add(slot, f.lag_slots, buys_all)          # tier counts only
-                    hub.add_strict(sv.add(slot, f.lag_slots, buys_all))
+                    strict_rows = sv.add(slot, f.lag_slots, buys_all)
+                    hub.add_strict(strict_rows)
+                for ev in alloc.step(slot, strict_rows):          # resolve + decide every block
+                    hub.publish("wallet", ev)
+                hub.set_wallet(alloc.state())
+                # risk recognition (always on): token safety (batched) + opportunity risks
+                if strict_rows:
+                    safety_map = await check_tokens(ex_session, rpc_url, [r.get("mint") or "" for r in strict_rows])
+                for row in strict_rows:
+                    try:
+                        safety = safety_map.get(row.get("mint") or "") if strict_rows else {}
+                        ok, reasons = gate(safety, event_risks(row))
+                        if not ok:
+                            for reason in reasons:
+                                st.risk_rejects[reason] = st.risk_rejects.get(reason, 0) + 1
+                            continue
+                        st.risk_safe += 1
+                        if exec_enabled:                          # real executor (dry-run): front leg
+                            d = await ex.front_run(ex_session, row)
+                            if d["decision"] == "commit":
+                                st.exec_commits += 1
+                                print(f"exec commit {row.get('pool','')[:8]} κ={d['kappa']/1e9:.3f} "
+                                      f"sim={d.get('sim_err')}", flush=True)
+                            else:
+                                st.exec_rejects += 1
+                    except Exception as e:
+                        st.exec_errors += 1
+                        print(f"exec error {e!r}", flush=True)
                 settled, sands = lab.push(slot, blk["swaps"])
                 for x in sands:
                     if not lab.is_bot(x.attacker):
@@ -146,6 +199,7 @@ async def main(cfg: dict) -> None:
                     last_push = time.time()
                     snapshot(hub, push_path)
         finally:
+            await ex_session.close()
             f.exec.shutdown(cancel_futures=True)
             store.close()
             await runner.cleanup()
