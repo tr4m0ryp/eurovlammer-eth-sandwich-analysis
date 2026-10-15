@@ -55,7 +55,7 @@ class StrictVisibility:
         for r in filter(interesting, rows):
             self.n += 1
             vis = tier(r, lag)
-            if vis == "invisible":
+            if vis != "visible":
                 continue
             self.n_visible += vis == "visible"
             try:
