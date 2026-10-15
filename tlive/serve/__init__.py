@@ -1,4 +1,5 @@
 """Local web surface for the live screener."""
-from .server import Hub, serve
+from .hub import Hub
+from .server import serve
 
 __all__ = ["Hub", "serve"]

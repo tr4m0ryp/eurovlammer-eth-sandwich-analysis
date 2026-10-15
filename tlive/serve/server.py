@@ -1,89 +1,50 @@
-"""Local web surface: the page, a JSON snapshot, and a server-sent event stream.
+"""Local web surface: the page, a JSON snapshot, the study documents, and a server-sent event stream.
 
-The hub is the only shared state: the pipeline writes into it, the HTTP handlers read from it.
-Events are small JSON objects (``flag``, ``settle``, ``sandwich``, ``stats``) fanned out to every
-open stream; a slow client drops events rather than holding the pipeline.
+Both the snapshot and the stream take a topic list, so a page only pays for what it renders:
+``/api/snapshot?parts=stats,strict`` and ``/api/stream?t=stats,strict``. Without one they send all.
 """
 from __future__ import annotations
 
 import asyncio
 import re
-from collections import deque
 from pathlib import Path
 
 import orjson
 from aiohttp import web
 
+from .hub import Hub
+
 PAGE = Path(__file__).parent / "page"
 DOCS = Path(__file__).resolve().parents[2] / "data" / "artifact"
 DOC_ID = re.compile(r"(optimal|visibility|exposure)/(summary|rows_\d{3})")
-RECENT = 600
-SNAP_FLAGS = 120
-SNAP_RISK = 120
-SNAP_SANDS = 50
-SNAP_VISIBLE = 120
-SNAP_STRICT = 120
+NO_CACHE = {"Cache-Control": "no-cache"}     # the page changes under a running screener; always revalidate
+PARTS = {"flags": ("flags", 120), "sandwiches": ("sandwiches", 50), "risk": ("risk", 120),
+         "visible": ("visible_optimal", 120), "strict": ("strict_optimal", 120)}
 
 
-class Hub:
-    def __init__(self):
-        self.flags: deque[dict] = deque(maxlen=RECENT)
-        self.sandwiches: deque[dict] = deque(maxlen=200)
-        self.risk: deque[dict] = deque(maxlen=RECENT)
-        self.visible_optimal: deque[dict] = deque(maxlen=200)
-        self.strict_optimal: deque[dict] = deque(maxlen=200)
-        self.stats: dict = {}
-        self.by_key: dict[tuple[str, int], dict] = {}
-        self.subs: set[asyncio.Queue] = set()
-
-    def publish(self, kind: str, data) -> None:
-        msg = orjson.dumps({"t": kind, "d": data})
-        for q in list(self.subs):
-            if q.qsize() < 2000:
-                q.put_nowait(msg)
-
-    def add_flag(self, row: dict) -> None:
-        if len(self.flags) == self.flags.maxlen:
-            old = self.flags[0]
-            self.by_key.pop((old["signature"], old["ev_index"]), None)
-        self.flags.append(row)
-        self.by_key[(row["signature"], row["ev_index"])] = row
-        self.publish("flag", row)
-
-    def add_risk(self, rows: list[dict]) -> None:
-        if rows:
-            self.risk.extend(rows)
-            self.publish("risk", rows)
-
-    def settle(self, slot: int, victims: dict) -> None:
-        changed = []
-        for row in self.flags:
-            if row["status"] != "pending" or row["slot"] > slot:
-                continue
-            hit = victims.get((row["signature"], row["ev_index"]))
-            if hit:
-                row.update(status="sandwiched", attacker=hit[1], sw_profit=hit[2])
-            else:
-                row["status"] = "clean"
-            changed.append({k: row[k] for k in ("signature", "ev_index", "status", "attacker", "sw_profit")})
-        if changed:
-            self.publish("settle", changed)
+def _topics(req: web.Request, key: str) -> frozenset[str] | None:
+    raw = req.query.get(key, "")
+    return frozenset(t for t in raw.split(",") if t) or None
 
 
 def app(hub: Hub) -> web.Application:
     async def index(_):
-        return web.FileResponse(PAGE / "index.html")
+        return web.FileResponse(PAGE / "index.html", headers=NO_CACHE)
 
-    async def snapshot(_):
-        flags = list(hub.flags)[-SNAP_FLAGS:]
-        sands = list(hub.sandwiches)[-SNAP_SANDS:]
-        risk = list(hub.risk)[-SNAP_RISK:]
-        visible = list(hub.visible_optimal)[-SNAP_VISIBLE:]
-        strict = list(hub.strict_optimal)[-SNAP_STRICT:]
-        body = orjson.dumps({"stats": hub.stats, "flags": flags, "sandwiches": sands,
-                             "risk": risk, "visible": visible, "strict": strict},
-                            option=orjson.OPT_SERIALIZE_NUMPY)
-        return web.Response(body=body, content_type="application/json")
+    async def static(req):
+        path = (PAGE / req.match_info["path"]).resolve()
+        if not path.is_relative_to(PAGE.resolve()) or not path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers=NO_CACHE)
+
+    async def snapshot(req):
+        want = _topics(req, "parts")
+        body = {"stats": hub.stats} if want is None or "stats" in want else {}
+        for part, (attr, n) in PARTS.items():
+            if want is None or part in want:
+                body[part] = list(getattr(hub, attr))[-n:]
+        return web.Response(body=orjson.dumps(body, option=orjson.OPT_SERIALIZE_NUMPY),
+                            content_type="application/json", headers=NO_CACHE)
 
     async def doc(req):
         """The study documents the artifact reads from its database, served from disk."""
@@ -91,24 +52,27 @@ def app(hub: Hub) -> web.Application:
         path = DOCS / f"{doc_id}.json"
         if not DOC_ID.fullmatch(doc_id) or not path.is_file():
             raise web.HTTPNotFound()
-        return web.FileResponse(path, headers={"Content-Type": "application/json", "Cache-Control": "no-cache"})
+        return web.FileResponse(path, headers={"Content-Type": "application/json", **NO_CACHE})
 
     async def stream(req):
-        resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"})
+        resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", **NO_CACHE})
         await resp.prepare(req)
-        q: asyncio.Queue = asyncio.Queue()
-        hub.subs.add(q)
+        q = hub.subscribe(_topics(req, "t"))
         try:
             while True:
                 try:
                     msg = await asyncio.wait_for(q.get(), 15)
-                    await resp.write(b"data: " + msg + b"\n\n")
                 except asyncio.TimeoutError:
                     await resp.write(b": ping\n\n")
+                    continue
+                chunk = [b"data: " + msg + b"\n\n"]
+                while not q.empty():             # drain a backlog in one write
+                    chunk.append(b"data: " + q.get_nowait() + b"\n\n")
+                await resp.write(b"".join(chunk))
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         finally:
-            hub.subs.discard(q)
+            hub.unsubscribe(q)
         return resp
 
     a = web.Application()
@@ -116,7 +80,7 @@ def app(hub: Hub) -> web.Application:
     a.router.add_get("/api/snapshot", snapshot)
     a.router.add_get("/api/stream", stream)
     a.router.add_get("/api/doc/{id:.+}", doc)
-    a.router.add_static("/static", PAGE)
+    a.router.add_get("/static/{path:.+}", static)
     return a
 
 
