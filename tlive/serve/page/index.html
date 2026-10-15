@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sandwich Targets</title>
+<title>Strict Sandwich Targets</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
@@ -15,107 +15,33 @@
 <div class="app">
   <header class="topbar">
     <div class="row">
-      <h1 class="name">Sandwich Targets</h1>
+      <h1 class="name">Strict Sandwich Targets</h1>
       <span class="live" id="live"><i></i><span id="live-t">loading</span></span>
-    </div>
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" aria-selected="true" data-tab="optimal">Optimal</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="visibility">Visibility</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="exposure">Exposure</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="vis-live">Live Targets</button>
     </div>
   </header>
   <main id="main"><div class="stack">
-    <section class="stack" data-panel="optimal">
-      <section class="stats" id="opt-stats"></section>
+    <section class="stack" data-panel="strict-live">
+      <section class="stats" id="strict-live-stats"></section>
       <div class="card">
-        <div class="card-h"><h2 class="card-t">Pattern 1: who the optimal targets are</h2><small>one rule finds 92% of them</small></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Rule over profitable buys</th><th class="num">Buys</th><th class="num">Optimal</th><th class="num">Precision</th><th class="num">Share of all optimal</th></tr></thead><tbody id="opt-rules"></tbody></table></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Profile</th><th class="num">Optimal</th><th class="num">Other profitable</th></tr></thead><tbody id="opt-profile"></tbody></table></div>
-      </div>
-      <div class="card">
-        <div class="card-h"><h2 class="card-t">Pattern 2: which ones attackers actually take</h2><small>hot pool: buy flow in the prior 8 slots above 0.85% of the pool</small></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Pool</th><th>Size</th><th class="num">Optimal buys</th><th class="num">Sandwiched</th><th class="num">Net gain, SOL</th></tr></thead><tbody id="opt-attack"></tbody></table></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Route</th><th class="num">Optimal buys</th><th class="num">Sandwiched</th></tr></thead><tbody id="opt-routes"></tbody></table></div>
+        <div class="card-h"><h2 class="card-t">Budget-Constrained Screener</h2><small>0.5 SOL budget (≈100 USDT). Only transactions we can actually front-run with our capital.</small></div>
+        <div class="verdict">Strict filter: visible + front-run fits budget + MESP > fees + ROI ≥ 1%. Each row is a buy we could sandwich right now with our 0.5 SOL capital.</div>
       </div>
       <div class="toolbar">
-        <div class="fld"><span>Show</span><div class="seg" data-o="view">
-          <button aria-pressed="true" data-v="">All optimal</button><button data-v="hit">Sandwiched</button><button data-v="missed">Missed</button><button data-v="hot">Hot pool</button><button data-v="quiet">Quiet pool</button></div></div>
-        <div class="fld"><span>Sort by</span><div class="seg" data-o="sort">
-          <button aria-pressed="true" data-v="rank">Net gain</button><button data-v="size">% of MC</button><button data-v="buy">Buy size</button><button data-v="time">Newest</button></div></div>
-        <small id="opt-note">Loading the optimal targets</small>
-      </div>
-      <div class="tbl-wrap tbl-scroll"><table>
-        <thead><tr>
-          <th class="num">Rank</th><th>Time</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">MC SOL</th><th class="num">% of MC</th>
-          <th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Predicted gain</th><th class="num">Realistic net</th>
-          <th>Pool</th><th>Route</th><th>Status</th><th class="num">Taken SOL</th><th>Tx</th>
-        </tr></thead>
-        <tbody id="opt-rows"></tbody>
-      </table></div>
-      <div class="pager" id="opt-count"></div>
-    </section>
-
-    <section class="stack" data-panel="visibility" hidden>
-      <section class="stats" id="vis-stats"></section>
-      <div class="card">
-        <div class="card-h"><h2 class="card-t">Visibility breakdown</h2><small>what determines whether an attacker sees a buy before it lands</small></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Route</th><th>Submission</th><th>Pool momentum</th><th class="num">Optimal buys</th><th class="num">Sandwiched</th><th class="num">Net gain, SOL</th><th>Visibility</th></tr></thead><tbody id="vis-detail"></tbody></table></div>
-      </div>
-      <div class="toolbar">
-        <div class="fld"><span>Show</span><div class="seg" data-v="view">
-          <button aria-pressed="true" data-v="">All visible</button><button data-v="hit">Sandwiched</button><button data-v="missed">Missed</button><button data-v="high">High vis only</button><button data-v="medium">Medium vis only</button></div></div>
-        <div class="fld"><span>Sort by</span><div class="seg" data-v="sort">
-          <button aria-pressed="true" data-v="rank">Net gain</button><button data-v="size">% of MC</button><button data-v="buy">Buy size</button><button data-v="time">Newest</button></div></div>
-        <small id="vis-note">Loading visibility data</small>
-      </div>
-      <div class="tbl-wrap tbl-scroll"><table>
-        <thead><tr>
-          <th class="num">Rank</th><th>Time</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">MC SOL</th><th class="num">% of MC</th>
-          <th class="num">Fee bps</th><th class="num">Slack</th><th class="num">Calibrated gain</th><th class="num">Net gain</th>
-          <th>Pool</th><th>Route</th><th>Submit</th><th>Visibility</th><th>Status</th><th class="num">Taken SOL</th><th>Tx</th>
-        </tr></thead>
-        <tbody id="vis-rows"></tbody>
-      </table></div>
-      <div class="pager" id="vis-count"></div>
-    </section>
-
-    <section class="stack" data-panel="vis-live" hidden>
-      <section class="stats" id="vis-live-stats"></section>
-      <div class="toolbar">
-        <div class="fld"><span>Show</span><div class="seg" data-lv="view">
-          <button aria-pressed="true" data-v="">All visible</button><button data-v="visible">High vis only</button><button data-v="marginal">Marginal only</button></div></div>
-        <small id="vis-live-n">Waiting for visible targets</small>
+        <div class="fld"><span>Show</span><div class="seg" data-sl="view">
+          <button aria-pressed="true" data-v="">All strict</button><button data-v="high_roi">ROI ≥ 5%</button><button data-v="frequent">Frequent pool</button></div></div>
+        <small id="strict-live-n">Waiting for strict targets</small>
       </div>
       <div class="tbl-wrap tbl-scroll"><table>
         <thead><tr>
           <th>Time</th><th class="num">Slot</th><th>Venue</th><th class="num">Buy SOL</th><th class="num">Fee</th><th class="num">Slack</th>
-          <th class="num">MESP</th><th class="num">Score</th><th>Router</th><th>Tip</th><th class="num">Lag</th><th>Visibility</th><th>Tx</th>
+          <th class="num">MESP₀.₅</th><th class="num">Front₀.₅</th><th class="num">ROI</th><th class="num">Freq/5m</th><th class="num">Score</th><th>Route</th><th>Vis</th><th>Tx</th>
         </tr></thead>
-        <tbody id="vis-live-rows"></tbody>
+        <tbody id="strict-live-rows"></tbody>
       </table></div>
-    </section>
-
-    <section class="stack" data-panel="exposure" hidden>
-      <section class="stats" id="exp-stats"></section>
-      <div class="card">
-        <div class="verdict">The most extractable buys are the ones attackers mostly <b>miss</b>. Selection tracks what a searcher can see before inclusion and pool momentum, not the value on the table. This tab reads the night's optimal targets and measures what lowered the chance of being sandwiched. Read-only, retrospective; nothing here executes a trade.</div>
-      </div>
-      <div class="card">
-        <div class="card-h"><h2 class="card-t">What reduced the chance of being sandwiched</h2><small>over the optimal set; lower attacked rate is better protection</small></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Protection present on the buy</th><th class="num">Buys</th><th class="num">Attacked</th><th class="num">vs no protection</th><th class="num">Relative drop</th></tr></thead><tbody id="exp-shield"></tbody></table></div>
-      </div>
-      <div class="card">
-        <div class="card-h"><h2 class="card-t">Pool momentum drives who is seen in time</h2><small>attacked rate by how much same-side buying preceded the target</small></div>
-        <div class="bars" id="exp-flow"></div>
-      </div>
     </section>
   </div></main>
 </div>
 <script src="static/app.js"></script>
-<script src="static/optimal.js"></script>
-<script src="static/visibility.js"></script>
-<script src="static/exposure.js"></script>
 <script src="static/boot.js"></script>
 </body>
 </html>

@@ -43,7 +43,8 @@ def snapshot(hub, path: Path) -> Path:
             "flags": list(reversed(list(hub.flags)[-N_FLAGS:])),
             "sands": list(reversed(list(hub.sandwiches)[-N_SANDS:])),
             "risk": list(reversed(list(hub.risk)[-N_RISK:])),
-            "visible": list(reversed(list(hub.visible_optimal)[-N_FLAGS:]))}
+            "visible": list(reversed(list(hub.visible_optimal)[-N_FLAGS:])),
+            "strict": list(reversed(list(hub.strict_optimal)[-N_SANDS:]))}
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_bytes(orjson.dumps(body, option=orjson.OPT_SERIALIZE_NUMPY))

@@ -1,4 +1,4 @@
-// Page boot for both local and artifact mode: study tabs from a document store, live tab from app.js.
+// Page boot: formatters and shared helpers for the strict screener live page.
 "use strict";
 const $ = (s) => document.querySelector(s);
 
@@ -15,48 +15,3 @@ const fmt = {
 function stat(label, v, s) {
   return `<div class="stat"><div class="lbl">${label}</div><div class="v">${v}</div><div class="s">${s || ""}</div></div>`;
 }
-
-function wireTabs() {
-  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === b));
-    document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== b.dataset.tab));
-  }));
-}
-
-// Local mode: the same documents the artifact reads, served from data/artifact by the local server.
-const localDb = {
-  doc: (id) => ({
-    get: async () => {
-      const r = await fetch("api/doc/" + id);
-      if (r.status === 404) return { exists: false, data: () => null };
-      if (!r.ok) throw new Error(id + ": HTTP " + r.status);
-      const body = await r.json();
-      return { exists: true, data: () => body };
-    },
-  }),
-};
-
-function loadStudy(db) {
-  wireOptimal();
-  wireVisibility();
-  loadOptimal(db).catch(() => { $("#opt-note").textContent = "Optimal data unavailable"; });
-  loadVisibility(db).catch(() => { $("#vis-note").textContent = "Visibility data unavailable"; });
-  loadExposure(db).catch(() => {});
-}
-
-async function boot() {
-  wireTabs();
-  wireLive();
-  if (window.claude && window.claude.use) {
-    const db = await window.claude.use("db");
-    if (!db) { $("#live-t").textContent = "sign in to claude.ai to load the study"; return; }
-    $("#live-t").textContent = "study data, read-only";
-    loadStudy(db);
-    liveArtifact(db);
-    return;
-  }
-  loadStudy(localDb);
-  liveLocal();
-}
-
-boot();

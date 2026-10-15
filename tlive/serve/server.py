@@ -22,6 +22,7 @@ SNAP_FLAGS = 120
 SNAP_RISK = 120
 SNAP_SANDS = 50
 SNAP_VISIBLE = 120
+SNAP_STRICT = 120
 
 
 class Hub:
@@ -30,6 +31,7 @@ class Hub:
         self.sandwiches: deque[dict] = deque(maxlen=200)
         self.risk: deque[dict] = deque(maxlen=RECENT)
         self.visible_optimal: deque[dict] = deque(maxlen=200)
+        self.strict_optimal: deque[dict] = deque(maxlen=200)
         self.stats: dict = {}
         self.by_key: dict[tuple[str, int], dict] = {}
         self.subs: set[asyncio.Queue] = set()
@@ -77,8 +79,9 @@ def app(hub: Hub) -> web.Application:
         sands = list(hub.sandwiches)[-SNAP_SANDS:]
         risk = list(hub.risk)[-SNAP_RISK:]
         visible = list(hub.visible_optimal)[-SNAP_VISIBLE:]
+        strict = list(hub.strict_optimal)[-SNAP_STRICT:]
         body = orjson.dumps({"stats": hub.stats, "flags": flags, "sandwiches": sands,
-                             "risk": risk, "visible": visible},
+                             "risk": risk, "visible": visible, "strict": strict},
                             option=orjson.OPT_SERIALIZE_NUMPY)
         return web.Response(body=body, content_type="application/json")
 
