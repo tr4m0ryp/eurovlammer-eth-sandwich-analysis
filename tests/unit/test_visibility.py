@@ -52,3 +52,12 @@ def test_hub_topic_filter_and_stats_throttle():
         assert only_strict.qsize() == 2 and everything.qsize() == 3
         assert hub.stats == {"slot": 2}
     asyncio.run(run())
+
+
+def test_hub_close_ends_streams():
+    async def run():
+        hub = Hub()
+        q = hub.subscribe(None)
+        hub.close()
+        assert q.get_nowait() is None
+    asyncio.run(run())
