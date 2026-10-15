@@ -76,6 +76,15 @@ class Follower:
         self.tip = await self.pool.slot()
         self.next_slot = self.tip - self.start_lag
         pending: dict[int, asyncio.Task] = {}
+        try:
+            async for blk in self._ordered(pending):
+                yield blk
+        finally:                             # in-flight fetches must not outlive the decode pool
+            for t in pending.values():
+                t.cancel()
+            await asyncio.gather(*pending.values(), return_exceptions=True)
+
+    async def _ordered(self, pending: dict[int, asyncio.Task]) -> AsyncIterator[dict]:
         last_tip_t = 0.0
         while True:
             now = time.monotonic()
