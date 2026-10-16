@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .v3_constants import (V3_SELECTORS, V3_SWAP_EVENT_TOPIC, V3_ROUTERS,
+from .v3_constants import (V3_SELECTORS, V3_SWAP_EVENT_TOPIC,
                            EXACT_INPUT_TYPES, EXACT_OUTPUT_TYPES, SINGLE_TYPES)
 
 EXACT_IN, EXACT_OUT = "in", "out"
@@ -45,17 +45,22 @@ class V3Swap:
 
     @property
     def direction(self) -> int:
-        """+1 if token0 is sold (amount0<0 → token0 in, token1 out), -1 otherwise."""
-        if self.amount0 < 0:
-            return 1        # token0 -> token1
+        """+1 if the swap is token0→token1 (zeroForOne), -1 if token1→token0.
+
+        V3 ``Swap`` event sign convention (verified against a traced pool ``swap`` call): a POSITIVE
+        ``amount0`` means token0 flowed INTO the pool (the trader paid token0) → token0→token1 →
+        ``zeroForOne=True``. A NEGATIVE ``amount0`` means token0 flowed OUT (trader received token0).
+        """
         if self.amount0 > 0:
-            return -1       # token1 -> token0
+            return 1        # token0 into pool → token0→token1
+        if self.amount0 < 0:
+            return -1       # token0 out of pool → token1→token0
         return 1
 
     @property
     def is_buy(self) -> bool:
-        """token1-out (numeraire-side in) — best effort without knowing which token is the numeraire."""
-        return self.amount1 > 0
+        """token1-out (numeraire token0 in) — True when the trader pays token0 and receives token1."""
+        return self.amount1 < 0
 
 
 def _selector(data: bytes) -> str:
@@ -116,14 +121,15 @@ def decode_v3_router(tx: dict[str, Any]) -> dict | None:
     """Decode a V3 victim swap from a SwapRouter02/Old call, including the nested ``multicall`` form.
 
     Returns the victim's guard triad (``amount_in``, ``amount_out_min``, token pair, fee, deadline)
-    or None when the tx is not a recognised direct V3 swap. Handles: exactInputSingle,
-    exactOutputSingle, exactInput/exactOutput (bytes path), and the ``multicall`` wrapper that
-    SwapRouter02 prepends. Defensive: any decode failure returns None (never trust a single field).
+    or None when the tx does not carry a recognised V3 swap. Handles: exactInputSingle,
+    exactOutputSingle, exactInput/exactOutput (bytes path), and the ``multicall`` wrapper.
+
+    **Decode by selector, not by target address.** Many MEV-bot / aggregator routers reuse the
+    standard ``exactInputSingle``/``exactInput`` ABI (`0xdfa8ead912…` alone is ~14% of V3 swaps and
+    calls `exactInputSingle`), so whitelisting only the Uniswap routers would silently drop them.
+    We recognise the swap *selector* and decode defensively regardless of ``to``.
     """
     from eth_abi import decode as abi_decode
-    to = (tx.get("to") or "").lower()
-    if to not in {k.lower() for k in V3_ROUTERS}:
-        return None
     inp = (tx.get("input") or "")[2:] if isinstance(tx.get("input"), str) else ""
     if len(inp) < 8:
         return None
@@ -133,11 +139,14 @@ def decode_v3_router(tx: dict[str, Any]) -> dict | None:
     if fn is None:
         return None
 
-    # Unwrap a SwapRouter02 multicall: payload = (deadline, bytes[] data); the first non-trivial
-    # inner call is the actual swap.
-    if fn == "multicall":
+    # Unwrap a SwapRouter02 multicall: payload = (deadline, bytes[] data) [or bytes[] for the
+    # no-deadline form]; the first non-trivial inner call is the actual swap.
+    if fn in ("multicall", "multicall_nodl"):
         try:
-            _deadline, inner_calls = abi_decode(["uint256", "bytes[]"], data[4:])
+            if fn == "multicall":
+                _deadline, inner_calls = abi_decode(["uint256", "bytes[]"], data[4:])
+            else:
+                inner_calls = abi_decode(["bytes[]"], data[4:])[0]
         except Exception:
             return None
         for inner in inner_calls:
@@ -182,6 +191,135 @@ def _decode_inner(fn: str, payload: bytes, tx: dict[str, Any]) -> dict | None:
     return d
 
 
+# ---- Uniswap UniversalRouter (execute) command decoding ----
+# The modern default router wraps swaps in ``execute(bytes commands, bytes[] inputs[, uint256 deadline])``
+# where each ``commands`` byte is a command code and ``inputs[i]`` its ABI-encoded argument. The V3 swap
+# commands carry the victim's guard directly:
+#   V3_SWAP_EXACT_IN  (0x00): (address recipient, uint256 amountIn, uint256 amountOutMin, bytes path, bool payerIsUser)
+#   V3_SWAP_EXACT_OUT (0x01): (address recipient, uint256 amountOut, uint256 amountInMax, bytes path, bool payerIsUser)
+UR_EXECUTE_SELECTORS = {"0x24856bc3": "execute(bytes,bytes[])", "0x3593564c": "execute(bytes,bytes[],uint256)"}
+UR_V3_SWAP_EXACT_IN = 0x00
+UR_V3_SWAP_EXACT_OUT = 0x01
+UR_SWAP_INPUT_TYPES = ["address", "uint256", "uint256", "bytes", "bool"]
+
+
+def decode_universal_router(tx: dict[str, Any]) -> dict | None:
+    """Decode a victim swap from a Uniswap UniversalRouter ``execute`` call.
+
+    Walks the ``commands`` byte string for the first V3 swap command (V3_SWAP_EXACT_IN/OUT) and
+    returns its guard (``amount_out_min``) + first-hop token pair + fee. Returns None when the tx
+    is not a UniversalRouter execute, or has no V3 swap command, or any field fails to decode."""
+    from eth_abi import decode as abi_decode
+    inp = (tx.get("input") or "")[2:] if isinstance(tx.get("input"), str) else ""
+    if len(inp) < 8:
+        return None
+    data = bytes.fromhex(inp)
+    sel = _selector(data)
+    sig = UR_EXECUTE_SELECTORS.get(sel)
+    if sig is None:
+        return None
+    try:
+        if sig == "execute(bytes,bytes[])":
+            commands, inputs = abi_decode(["bytes", "bytes[]"], data[4:])
+        else:
+            commands, inputs, _deadline = abi_decode(["bytes", "bytes[]", "uint256"], data[4:])
+    except Exception:
+        return None
+    commands_b = bytes(commands)
+    inputs_l = list(inputs)
+    for i, cmd in enumerate(commands_b):
+        if i >= len(inputs_l):
+            break
+        if cmd == UR_V3_SWAP_EXACT_IN or cmd == UR_V3_SWAP_EXACT_OUT:
+            try:
+                (recipient, amount, amount_limit, path, _payer) = abi_decode(
+                    UR_SWAP_INPUT_TYPES, bytes(inputs_l[i]))
+            except Exception:
+                continue
+            hops = _decode_path(bytes(path))
+            if not hops:
+                continue
+            tok_in, tok_out, fee = hops[0]
+            if cmd == UR_V3_SWAP_EXACT_IN:
+                amount_in, amount_out_min = int(amount), int(amount_limit)
+            else:
+                # exact out: victim wants `amount` out, pays <= `amount_limit` in
+                amount_out_min, amount_in = int(amount), int(amount_limit)
+            return {"fn": "universal_router_execute", "token_in": tok_in, "token_out": tok_out,
+                    "fee": fee, "amount_in": amount_in, "amount_out_min": amount_out_min,
+                    "deadline": None, "n_hops": len(hops), "user": tx.get("from", ""),
+                    "tx_hash": tx.get("hash", "")}
+    return None
+
+
+# Selectors of standard swap calls that unknown wrappers commonly embed, with the ABI type list to
+# decode the payload immediately following the selector.
+_EMBEDDED_SWAPS = {
+    "0x414bf389": ("exactInputSingle", SINGLE_TYPES),            # (tokenIn,tokenOut,fee,recipient,deadline,amountIn,amountOutMinimum,sqrtPriceLimit)
+    "0xdb3e2198": ("exactOutputSingle", SINGLE_TYPES),           # same, amount=amountOut, limit=amountInMax
+    "0x38ed1739": ("v2_exactTokensForTokens", ["uint256", "uint256", "address[]", "address", "uint256"]),
+    "0x18cbafe5": ("v2_exactTokensForETH", ["uint256", "uint256", "address[]", "address", "uint256"]),
+    "0x7ff36ab5": ("v2_exactETHForTokens", ["uint256", "uint256", "address[]", "address", "uint256"]),
+}
+
+
+def decode_embedded_swap(tx: dict[str, Any]) -> dict | None:
+    """Generic fallback for *undocumented* router wrappers: scan the raw calldata for an embedded
+    standard swap selector (``exactInputSingle``/``exactOutputSingle``/V2 ``swapExact*``) at any
+    offset, and decode the ABI payload that follows it. Recovers the victim's guard from opaque
+    bot routers whose only decodable part is the inner Uniswap call they make.
+
+    Scans every byte offset for a 4-byte selector match; a false-positive is rejected by the ABI
+    decode (which returns None on malformed payload), so the first clean decode wins.
+    """
+    from eth_abi import decode as abi_decode
+    inp = (tx.get("input") or "")[2:] if isinstance(tx.get("input"), str) else ""
+    if len(inp) < 8:
+        return None
+    data = bytes.fromhex(inp)
+    for off in range(0, max(0, len(data) - 4)):
+        sel = "0x" + data[off:off + 4].hex()
+        spec = _EMBEDDED_SWAPS.get(sel)
+        if spec is None:
+            continue
+        fn, types = spec
+        payload = data[off + 4:]
+        if fn in ("exactInputSingle", "exactOutputSingle"):
+            if len(payload) < 256:
+                continue
+            try:
+                (tok_in, tok_out, fee, _recipient, deadline, amount, amount_limit, _sqrt) = abi_decode(
+                    types, payload[:256])
+            except Exception:
+                continue
+            if fn == "exactOutputSingle":
+                amount_out_min, amount_in = int(amount), int(amount_limit)
+            else:
+                amount_in, amount_out_min = int(amount), int(amount_limit)
+            return {"fn": f"embedded_{fn}", "token_in": tok_in, "token_out": tok_out,
+                    "fee": int(fee), "amount_in": amount_in, "amount_out_min": amount_out_min,
+                    "deadline": int(deadline), "n_hops": 1, "user": tx.get("from", ""),
+                    "tx_hash": tx.get("hash", "")}
+        else:
+            # V2 swapExactTokensForTokens/ETH: (amountIn, amountOutMin, path, to, deadline).
+            # ``path`` is a dynamic address[] — decode from the full remaining payload and let
+            # abi_decode consume exactly what it needs (try/except rejects false-positive matches).
+            if len(payload) < 160:
+                continue
+            try:
+                amount_in, amount_out_min, path, _to, deadline = abi_decode(types, payload)
+            except Exception:
+                continue
+            path = list(path)
+            if len(path) < 2:
+                continue
+            return {"fn": f"embedded_{fn}", "token_in": path[0], "token_out": path[-1],
+                    "fee": 0, "amount_in": int(amount_in), "amount_out_min": int(amount_out_min),
+                    "deadline": int(deadline), "n_hops": len(path) - 1, "user": tx.get("from", ""),
+                    "tx_hash": tx.get("hash", "")}
+    return None
+
+
 def decode_v3_swap_logs(tx_hash: str, block_number: int | None, tx_index: int, logs: list[dict],
                          calldata: dict | None = None,
                          token_by_pool: dict[str, tuple[str, str, int]] | None = None) -> list[V3Swap]:
@@ -213,6 +351,6 @@ def decode_v3_swap_logs(tx_hash: str, block_number: int | None, tx_index: int, l
             amount_out_min=calldata.get("amount_out_min") if calldata else None,
             amount_in=calldata.get("amount_in") if calldata else None,
             deadline=calldata.get("deadline") if calldata else None,
-            raw={"sender": sender},
+            raw={"sender": sender, "n_hops": (calldata.get("n_hops") if calldata else None)},
         ))
     return out
