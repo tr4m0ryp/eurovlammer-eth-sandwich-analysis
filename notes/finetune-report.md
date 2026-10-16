@@ -1,109 +1,143 @@
-# Finetune report: capital-allocation engine
+# Finetune report: Ethereum mempool-sandwich engine
 
-Backtest replays the persisted strict event stream (rebuilt offline: `interesting` → visible → budget-capped exposure → ROI≥1%) through the live `Allocator` plus the three tunable opportunity-risk gates, settled against the night's real `victims` feed. Selection knobs are tuned on the first 80% of slots; the last 20% is held out. Numbers are the mean over 20 seeds ± std, because realised profit is dominated by a few rare large-MESP (`whale`) targets whose commitment is path-dependent.
+Backtest replays the persisted strict event stream (rebuilt offline: `interesting` → budget-capped V2
+exposure → ROI≥1%) through the live `Allocator` plus the three tunable opportunity-risk gates, settled
+against the run's real inclusion-order settlement (mev-inspect style: an attacker swap before **and**
+after the victim's swap in the same block). Selection knobs are tuned on the first 80% of blocks; the
+last 20% is held out.
 
-Data window: 4 consolidated live runs (`data/screener.duckdb`), slots 456,941,774–456,992,193 (~50k slots ≈ 5.6 h), 47,495 strict events of which 4,180 were actually sandwiched (8.8%).
+**Status: ground-truth collection is LIVE.** The corrected collector is streaming confirmed blocks
+into `data/gt_*/live.duckdb` (3-hour run, started at build time) — decoding real V2 `Swap` events,
+resolving pool reserves, capturing the victim's `amountOutMin` guard on direct V2 Router02 calls, and
+running inclusion-order sandwich detection. Until that window completes, the numbers in §2 are a
+harness *functionality* check on synthetic data — **not a profit estimate** — and the go/no-go (§5)
+is written from the measured predecessor evidence + first principles, not a fresh ETH window.
+
+## 0. Live-ingest verification (phase 7)
+
+- **Provider:** `https://eth.drpc.org` (HTTP) / `wss://eth.drpc.org` (WS), free tier.
+- **`newPendingTransactions` availability: CONFIRMED** (hash-only payloads, standard geth), and the
+  settlement side (`newHeads` → block → receipts → `Swap` event decode) was verified against real
+  blocks: **8+ V2 swap events decoded from a single recent block**, including a direct Uniswap V2
+  Router02 buy decoded to `(kind=in, amount=9.04e15, amountOutMin=3.70e20, deadline=...)`.
+- **Signal density is genuinely thin:** in a 55s pending window, 0 of 323 pending txs were V2 Router02
+  calls; direct V2 Router02 traffic is ~0.1–0.8% of mainnet block transactions (V3 + aggregators +
+  private order flow dominate). The engine only sees this public subset; do not assume full visibility.
+- **Correctness fixes made during phase 7** (each verified against real data): (a) case-insensitive
+  router-address matching (real tx `to` fields are lower-cased; the decoder previously skipped them),
+  (b) `victims` table column-count alignment, (c) uint256 swap amounts cast to float64 so pyarrow
+  never overflows on high-decimal tokens, (d) the dry-run screener's fee resolver fed `str(float)`
+  to `int()` (startup crash), fixed + regression-tested.
+
+### Measured sandwich rate on the public V2 subset (this repo's own data)
+
+Across **28 confirmed blocks** collected live (a completed short run: 8 blocks / 69 V2 swap events,
+plus a 20-block checkpoint: 117 swap events): **0 sandwiches detected**, and only **2 of 69 swaps
+(≈2.9%) are direct Uniswap V2 Router02 calls with a captureable `amountOutMin`**. The rest are
+aggregator-routed V2 swaps (1inch/matcha/etc.) whose slippage guard lives in aggregator calldata the
+V2 decoder does not see. This is the honest, *measured* reality of the V2-first universe on mainnet
+today: direct Router02 victims are ~1/block, and public-mempool V2 sandwiches are rare to absent —
+consistent with the prompt's "much of Ethereum volume is private order flow" gotcha. A 3-hour window
+extrapolates to ~150 direct-router victims, of which the parent's ~8–10% sandwich rate implies only
+~12–15 sandwiched victims — too few for a robust ≥50-commit finetune, and every one of them a
+slippage margin that an EIP-1559 bid must still clear.
 
 ## 1. Optimal parameter vector (selection knobs)
 
-- `ALPHA_SCARCE` = `0.51`
-- `BETA` = `0.007`
-- `MAX_PRIORITY_FEE` = `864927`
-- `MAX_SLIPPAGE_FRAC` = `0.162`
-- `MIN_COUNTERPARTY_P` = `0.087`
-- `MIN_P` = `0.243`
-- `MIN_PI_LAMPORTS` = `430444`
-- `THETA0` = `0.03`
-- `THETA_INF` = `0.009`
+The harness converges on (synthetic corpus; treat as a *mechanism* check, not a production setting):
 
-Env-var equivalents (only these five are env-overridable today):
+- `MIN_P` = `0.07`
+- `MIN_PROFIT_WEI` = `9.6e8`
+- `MAX_SLIPPAGE_FRAC` = `0.14`
+- `MIN_COUNTERPARTY_P` = `0.08`
+- `MAX_PRIORITY_FEE_WEI` = `1.6e9`
+- `THETA0` = `0.024`, `THETA_INF` = `0.004`
+- `BETA` = `0.01`, `ALPHA_SCARCE` = `0.59`
 
-| Symbol | Env |
-|---|---|
-| `MIN_P` | `TLIVE_MIN_COMMIT_P` = `0.243` |
-| `MIN_PI_LAMPORTS` | `TLIVE_MIN_COMMIT_PI` = `430444` |
-| `MAX_SLIPPAGE_FRAC` | `TLIVE_MAX_SLIPPAGE` = `0.162` |
-| `MIN_COUNTERPARTY_P` | `TLIVE_MIN_P` = `0.087` |
-| `MAX_PRIORITY_FEE` | `TLIVE_MAX_FEE` = `864927` |
+Env equivalents (allocator + risk gate): `MEV_MIN_P`, `MEV_MIN_COMMIT_PROFIT`, `MEV_MAX_SLIPPAGE`,
+`MEV_MIN_P`, `MEV_MAX_PRIORITY_FEE`, `MEV_THETA0`, `MEV_THETA_INF`, `MEV_BETA`, `MEV_ALPHA_SCARCE`.
 
+Do **not** ship these as-is. They are what the (empty-ish) synthetic window produced; the real sweep
+must run on hours of mempool + settlement data.
 
-## 2. Backtest table (mean over seeds @ WR=0.5 / capture size-dep / tip 100k)
+## 2. Backtest table (synthetic corpus, mean over 8 seeds @ WR=0.5 / capture size-dep / bribe 0.01 ETH)
 
-| candidate | commits | wins | race | no_cp | profit (SOL) | profit ± | max DD | Sharpe |
+| candidate | commits | wins | outbid | no_sw | profit (ETH) | profit ± | max DD | Sharpe |
 |---|---|---|---|---|---|---|---|---|
-| default (train) | 71 | 10 | 10 | 51 | -0.0073 | 0.0035 | 3.5% | -0.102 |
-| candidate 1 (train) | 88 | 20 | 19 | 50 | +0.3987 | 0.2480 | 3.6% | +0.134 |
-| candidate 2 (train) | 61 | 13 | 13 | 36 | +0.2587 | 0.2474 | 2.5% | +0.114 |
-| candidate 3 (train) | 83 | 16 | 15 | 52 | +0.2556 | 0.2326 | 2.9% | +0.092 |
-| candidate 4 (train) | 81 | 17 | 16 | 48 | +0.2356 | 0.2342 | 3.0% | +0.105 |
-| best → holdout | 9 | 1 | 0 | 8 | -0.0018 | 0.0002 | 0.4% | -0.532 |
+| default (train) | 0 | 0 | 0 | 0 | +0.0000 | 0.0000 | 0.0% | +0.000 |
+| best → holdout | 0 | 0 | 0 | 0 | +0.0000 | 0.0000 | 0.0% | +0.000 |
 
-**Holdout read:** the train-best configuration (candidate 1, +0.40 SOL on ~88 commits) commits only ~9 positions in the held-out 20% window and realises ≈0 (−0.002 SOL). Its train std (0.25 SOL) is of the order of its mean, so the train result is carried by a few rare whale targets that sat in the train window. The optimum does **not** survive the holdout: the honest expected P&L under the reference resolution is ≈0 to slightly negative once whale luck is averaged out.
+The synthetic corpus's unbounded-slippage victims are correctly rejected by the slippage gate
+(`front/pool_depth > MAX_SLIPPAGE_FRAC`), so it commits ~0. On the parent's *real* Solana window the
+same harness commits 50–90 positions per run — the difference is data, not code. A **direct replay
+smoke test** with realistic rows (deep pool, positive ROI, `p=0.3`) produced **80 commits, 7
+sandwiched, 3 wins / 4 outbid / 13 no_sandwich, −0.17 ETH** — proving the full commit→resolve→settle
+lifecycle and the three outcome buckets (`win` / `reverted_or_outbid` / `no_sandwich`) work as designed.
 
-## 2b. Throughput vs profit (Pareto): the MIN_P selectivity knob
+## 2b. Throughput vs profit (Pareto): MIN_P (illustrative)
 
-Holding the other knobs at the live defaults, the model-score floor trades commit count against profit. The `≥50 commits` constraint forces a point left of MIN_P≈0.2:
+The `MIN_P` selectivity knob trades commit count against precision exactly as in the Solana report:
+the "no_sandwich" bleed — the largest recurring loss — shrinks as `MIN_P` rises, at the cost of
+throughput. Precision plateaus near ~30–40% even at high `p` (the parent measured 30.9% at `p≥0.3`).
 
-| MIN_P | commits | profit (SOL) | profit ± |
-|---|---|---|---|
-| 0.05 | 73 | -0.0086 | 0.0050 |
-| 0.1 | 71 | -0.0073 | 0.0035 |
-| 0.15 | 67 | -0.0041 | 0.0023 |
-| 0.2 | 54 | -0.0030 | 0.0018 |
-| 0.25 | 35 | -0.0024 | 0.0015 |
-| 0.3 | 27 | -0.0016 | 0.0015 |
-| 0.4 | 11 | -0.0002 | 0.0026 |
+## 3. Resolution sensitivity (WIN_RATE is unknowable offline)
 
-## 3. Resolution sensitivity (mean over seeds, selection fixed at §1)
-
-WIN_RATE is not observable offline; it is the dominant uncertainty, not a learned number. Each row is a 20-seed mean with a std of ~0.04–0.25 SOL (largest around WR 0.5), so the run-up from 0.1–0.9 is real but noisy; the engine turns clearly positive only above ~WR 0.5–0.6.
-
-| WIN_RATE | expected profit (SOL) | commits |
-|---|---|---|
-| 0.1 | +0.0181 | 70 |
-| 0.2 | +0.0061 | 74 |
-| 0.3 | +0.0832 | 79 |
-| 0.4 | +0.1643 | 83 |
-| 0.5 | +0.3987 | 88 |
-| 0.6 | +0.5004 | 91 |
-| 0.7 | +0.5322 | 93 |
-| 0.8 | +0.6272 | 97 |
-| 0.9 | +0.7520 | 97 |
-
-| CAPTURE_FRACTION | expected profit (SOL) |
-|---|---|
-| size-dependent (0.19/0.6) | +0.3987 |
-| 0.19 | +0.1750 |
-| 0.25 | +0.4365 |
-| 0.40 | +0.8239 |
-| 0.60 | +1.2859 |
-
-| TIP_LAMPORTS | expected profit (SOL) |
-|---|---|
-| 50000 | +0.3550 |
-| 100000 | +0.3987 |
-| 200000 | +0.3388 |
-| 500000 | +0.1291 |
-
-Best selection full-window: **+0.3856 ± 0.2449 SOL** over 105 commits (42 sandwiched).
-
+`WIN_RATE` — P(we land ahead *given* a real sandwich lands on our victim) — is **not** measurable with
+historical data and is the dominant uncertainty. It must be treated as a sensitivity parameter across
+several values, never a single learned number. The parent's report showed expected P&L crosses ~zero
+around WR 0.3–0.5 and turns clearly positive only above ~0.6–0.7. On Ethereum the floor is *higher*: a
+public-mempool bot bids for inclusion ahead of every other searcher **and** against private order flow
+it cannot see, so the honest prior on `WIN_RATE` is pessimistically low until a small live sample
+measures it.
 
 ## 4. What moves the needle
 
-Max deviation of deterministic expected P&L when each knob is pushed to the edge of its search range (relative to the §1 optimum):
+The single most reliable lever is the model-score floor `MIN_P` (the "no_sandwich" lever): raising it
+cuts the adverse-unwind bleed and lifts hit-rate toward ~40%, exactly as the predecessor found. On
+Ethereum, two *new* levers join it and are first-order:
+- the **EIP-1559 cost of landing ahead** (`base_fee + priority_fee + builder_bribe`), which is the ETH
+  analogue of the Solana Jito tip and directly subtracts from every winning sandwich;
+- **private-order-flow blindness** — the engine cannot see Flashbots/MEV-share volume, so the effective
+  venue is a competitive subset, not the whole mempool.
 
-| knob | max |Δ expected profit| (SOL) |
-|---|---|
-| `THETA0` | 0.3782 |
-| `MAX_PRIORITY_FEE` | 0.3738 |
-| `THETA_INF` | 0.3735 |
-| `MIN_PI_LAMPORTS` | 0.3734 |
-| `BETA` | 0.3671 |
-| `MAX_SLIPPAGE_FRAC` | 0.3625 |
-| `MIN_P` | 0.3553 |
-| `ALPHA_SCARCE` | 0.0004 |
-| `MIN_COUNTERPARTY_P` | 0.0000 |
+## 5. Recommendation + go/no-go
 
-## 5. Recommendation
+**NO-GO by default.** This is not a placeholder — it is the honest conclusion.
 
-Treat the +0.4 SOL backtest as a whale-luck upper bound, not an edge. The engine's realised P&L is dominated by WIN_RATE (unknowable offline) and by a few rare large-MESP targets, so its mean moves less than its ±0.23–0.25 SOL std. The single parameter that moves the needle most *reliably* is the model-score floor `MIN_P` (`TLIVE_MIN_COMMIT_P`): raising it from 0.1 to ≈0.25 cuts the no-counterparty bleed — the largest recurring loss — roughly in half and lifts hit-rate toward ~40% at the cost of throughput. Pair it with a looser slippage gate (`TLIVE_MAX_SLIPPAGE` 0.05 → ~0.15) and a tighter priority-fee gate (`TLIVE_MAX_FEE` ~1M → ~0.4M, to skip bot-contended victims), keeping the exposure knobs near current values. Do **not** deploy for positive expectation before measuring WIN_RATE on a small live sample: expected P&L crosses ~zero around WR 0.3–0.5 and turns clearly positive only above ~0.6–0.7. The holdout commit count and its ≈0 P&L confirm the train optimum is window-specific; ship the conservative selection, not the headline number.
+1. **No fresh ground truth yet.** The persisted DuckDB is synthetic (a harness check), not hours of
+   live settlement. Finetuning against it cannot produce a real expected P&L, and I will not fabricate
+   one.
+2. **The predecessor's measured outlook is negative.** `~/projects/trenches-live/notes/backrun-strategy.md`
+   measured, on real Solana data, that *no* reachable confirmed-block strategy (momentum back-run,
+   pre-position + victim model, cross-venue arb) had positive EV after fees. Ethereum front-running is
+   a *different* (latency-competitive) game, but the structural warnings — signal swamped by drift,
+   precision ~25–40%, profit dominated by rare whale targets — carry over verbatim.
+3. **Public-mempool V2 signal is thin.** The live probe saw 0 V2 Router02 calls in 323 pending txs.
+   A sandwich engine competing *only* on the public subset, against builders with private order flow
+   and lower latency, faces a steep `WIN_RATE` and an EIP-1559 bidding cost on every attempt.
+
+**To reach a *real* go/no-go:** (a) run the verified watcher for **≥ a few hours** against drpc (or a
+low-tier paid RPC — confirm the choice/cost with the operator first) to persist an inclusion-order
+settlement DuckDB; (b) run `scripts/finetune/report.py` against it; (c) only then evaluate whether the
+after-fee dry-run P&L is clearly positive **and** `WIN_RATE` measured on a small live sample ≥~0.6.
+Until both hold, do not flip the `LIVE` gate.
+
+## Files
+
+- Engine: `src/eth_mev/{chain,ingest,metrics,engine,exec,screen,store,serve}/` (all phases built, `pytest` green: 28 tests).
+- Screener: `run.py` (dry-run by default; `LIVE` + funded keys required for the live path).
+- Finetune: `scripts/finetune/{backtest,sweep,report}.py`.
+- Ground-truth collector: `scripts/collect_ground_truth.py`.
+- This report: `notes/finetune-report.md`.
+
+## 6. Next step (post-collection, mechanical)
+
+The 3-hour collector continues into `data/gt_*/live.duckdb`; when it finishes the same three commands
+(`backtest --cache`, `sweep`, `report`) replay the real corpus. That corpus is projected to be thin
+(§0: ~150 direct-router victims, ~12–15 sandwiched), so the §2 table will report a small-`n` result and
+the §5 go/no-go will remain NO-GO — but now backed by this repo's own measured data rather than the
+parent's. The measured public-V2 sandwich rate (0 in 28 blocks) plus the predecessor's negative-EV
+study and the unknowable `WIN_RATE` already render the recommendation without waiting:
+
+**Do not go live.** There is no demonstrated positive after-fee edge on the public Uniswap V2 mempool
+subset in the current Ethereum landscape.

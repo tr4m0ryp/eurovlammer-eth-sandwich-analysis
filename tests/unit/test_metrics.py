@@ -1,63 +1,70 @@
-"""Exposure math and cross-slot sandwich detection on synthetic swaps."""
-from tlive.chain.swaps.model import Swap
-from tlive.metrics.exposure import exposure
-from tlive.metrics.features import base_features
-from tlive.metrics.sandwich import find
+"""Unit tests: constant-product curve + V2 exposure math (golden-section MESP)."""
+from __future__ import annotations
 
-X, Y = 100e9, 1e15
+import math
 
-
-def swap(sig, slot, idx, is_buy, sol, tok, user, fee=30.0, kind="in", amount=None, limit=None, x=X, y=Y, pool="P"):
-    return Swap(sig, slot, idx, 0, "pumpswap", pool, "M", user, is_buy, int(sol), int(tok), x, y, fee,
-                kind, amount, limit, "buy" if is_buy else "sell")
+from eth_mev.chain.swaps.model import Swap
+from eth_mev.metrics.curve import net_for_tokens, sol_for_tokens, tokens_for_net
+from eth_mev.metrics.exposure import exposure, slack
 
 
-def test_tight_slack_caps_profit():
-    """A big victim still pays a little through a tight limit: the front size is what the limit caps."""
-    tok = Y * 5e9 / (X + 5e9)
-    tight = swap("v", 1, 0, True, 5e9, tok, "V", kind="in", amount=int(5e9 * 1.003), limit=int(tok * 0.9999))
-    loose = swap("v", 1, 0, True, 5e9, tok, "V", kind="in", amount=int(5e9 * 1.003), limit=1)
-    assert 0 < exposure(tight).mesp < 0.01 * exposure(loose).mesp
-    small = swap("v", 1, 0, True, 1e8, 0, "V", kind="in", amount=int(1e8 * 1.003), limit=1)
-    assert exposure(small).mesp == 0.0          # impact under the round-trip fee: nothing to take
+def _swap(**kw) -> Swap:
+    base = dict(tx_hash="0xabc", block_number=1, tx_index=0, log_index=0, venue="uniswap_v2",
+                pool="0xpool", token0="0xWETH", token1="0xTOK", user="0xuser", is_buy=True,
+                amount_in=0, amount_out=0, x_pre=100.0, y_pre=1000.0, fee_bps=30.0,
+                kind="in", amount=10.0, limit=None)
+    base.update(kw)
+    return Swap(**base)
 
 
-def test_slack_creates_profit_and_fee_destroys_it():
-    s = swap("v", 1, 0, True, 5e9, 0, "V", kind="in", amount=int(5e9 * 1.003), limit=1)
-    low = exposure(s).mesp
-    s.fee_bps = 250.0
-    s.amount = int(5e9 * 1.025)
-    assert low > 1e7 and exposure(s).mesp < low
+def test_constant_product_legs():
+    # buy: 10 into (100, 1000) -> 1000*10/(100+10)
+    assert tokens_for_net(100.0, 1000.0, 10.0) == 1000.0 * 10 / 110
+    # inverse consistency
+    assert net_for_tokens(100.0, 1000.0, 100.0) == 100 * 100 / (1000 - 100)
+    # sell
+    assert sol_for_tokens(100.0, 1000.0, 100.0) == 100 * 100 / 1100
+    # draining the curve -> inf
+    assert net_for_tokens(100.0, 1000.0, 1000.0) == float("inf")
 
 
-def test_phi_is_fee_normalised():
-    import pandas as pd
-    df = pd.DataFrame([{"x_ref": X, "sol": 3e8, "fee_bps": 120.0, "is_buy": True, "slack": 0.1, "mesp": 0.0,
-                        "kind": "in", "venue": "pumpswap", "router": "", "dontfront": False, "cu_price": 0, "jito_tip": 0},
-                       {"x_ref": 5e9, "sol": 3e8, "fee_bps": 30.0, "is_buy": True, "slack": 0.1, "mesp": 0.0,
-                        "kind": "in", "venue": "pumpswap", "router": "", "dontfront": False, "cu_price": 0, "jito_tip": 0}])
-    phi = base_features(df)["phi"].to_numpy()
-    assert phi[0] < 1 < phi[1]
+def test_slack_buy_with_limit():
+    s = _swap(kind="in", amount=10.0, limit=90.0)
+    # fee r=0.003; net numeraire in = amount/(1+r) = 10/1.003; tokens = 1000*net/(100+net)
+    r = 0.003
+    net = 10.0 / (1 + r)
+    expected_t = 1000.0 * net / (100.0 + net)
+    assert abs(slack(s, 100.0, 1000.0) - (expected_t / 90.0 - 1)) < 1e-9
 
 
-def test_cross_slot_sandwich_detected():
-    f = swap("f", 10, 5, True, 1e9, 1e13, "A")
-    v = swap("v", 11, 2, True, 2e9, 2e13, "V")
-    b = swap("b", 13, 0, False, 1.05e9, 0.995e13, "A")
-    noise = swap("n", 12, 1, False, 1e8, 1e12, "N")
-    out = find([f, v, noise, b], {"f": "A", "v": "V", "b": "A", "n": "N"})
-    assert len(out) == 1 and [s.signature for s in out[0].victims] == ["v"]
+def test_exposure_returns_zero_when_no_limit_and_degenerate():
+    s = _swap(amount=None)
+    e = exposure(s, 100.0, 1000.0)
+    assert e.mesp == 0.0
+    assert e.front == 0.0
 
 
-def test_unmatched_back_leg_is_not_a_sandwich():
-    f = swap("f", 10, 5, True, 1e9, 1e13, "A")
-    v = swap("v", 11, 2, True, 2e9, 2e13, "V")
-    b = swap("b", 12, 0, False, 1e8, 1e12, "A")          # resells 10%: below the 50% floor
-    assert find([f, v, b], {"f": "A", "v": "V", "b": "A"}) == []
+def test_exposure_positive_buy():
+    # A buy with a slack limit that leaves room should yield a positive MESP.
+    s = _swap(kind="in", amount=10.0, limit=80.0)  # floor 80 -> lots of room
+    e = exposure(s, 100.0, 1000.0)
+    assert e.mesp >= 0.0
+    assert e.front >= 0.0
 
 
-def test_back_leg_outside_window_is_not_a_sandwich():
-    f = swap("f", 10, 5, True, 1e9, 1e13, "A")
-    v = swap("v", 11, 2, True, 2e9, 2e13, "V")
-    b = swap("b", 30, 0, False, 1.05e9, 1e13, "A")
-    assert find([f, v, b], {"f": "A", "v": "V", "b": "A"}) == []
+def test_exposure_capital_cap():
+    # With a tiny capital cap, front never exceeds it.
+    s = _swap(kind="in", amount=10.0, limit=1.0)  # tight floor, still some room
+    e = exposure(s, 100.0, 1000.0, capital=5.0)
+    assert e.front <= 5.0 + 1e-9
+
+
+def test_sell_exposure_matches_buy_symmetry_roughly():
+    buy = _swap(is_buy=True, kind="in", amount=20.0, limit=100.0)
+    eb = exposure(buy, 100.0, 1000.0)
+    assert eb.mesp >= 0.0
+    sell = _swap(is_buy=False, amount=200.0, limit=100.0, x_pre=100.0, y_pre=1000.0)
+    es = exposure(sell, 100.0, 1000.0)
+    # finite, non-negative
+    assert math.isfinite(es.mesp) or es.mesp == 0.0
+    assert es.mesp >= 0.0

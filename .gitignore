@@ -5,4 +5,4 @@ ref/
 __pycache__/
 *.pyc
 .env
-.playwright-mcp/
+*.egg-info/.env.example
