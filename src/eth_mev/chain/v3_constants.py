@@ -22,6 +22,7 @@ V3_SELECTORS = {
     "0xc04b8d59": "exactInput",         # exactInput((bytes,address,uint256,uint256,uint256))
     "0xf28c0498": "exactOutput",        # exactOutput((bytes,address,uint256,uint256,uint256))
     "0x5ae401dc": "multicall",          # multicall(uint256,bytes[])
+    "0xac9650d8": "multicall_nodl",     # multicall(bytes[])  (no deadline)
 }
 
 # ExactInputParams / ExactOutputParams struct field layouts (ABI tuple order).
