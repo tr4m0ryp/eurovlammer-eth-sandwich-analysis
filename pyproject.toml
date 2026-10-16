@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eth-mev"
+version = "0.1.0"
+description = "Ethereum mempool-sandwich engine (Uniswap V2 first)"
+requires-python = ">=3.12"
+dependencies = [
+    "web3>=7",
+    "aiohttp>=3",
+    "eth-account>=0.13",
+    "eth-abi>=5",
+    "hexbytes>=1",
+    "duckdb>=1",
+    "pyarrow>=15",
+    "pandas>=2",
+    "numpy>=1.26",
+    "lightgbm>=4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
