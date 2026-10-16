@@ -95,6 +95,49 @@ class Rpc:
     async def transaction_receipt(self, tx_hash: str) -> Any:
         return await self.call("eth_getTransactionReceipt", [tx_hash])
 
+    async def block_receipts(self, number: int | str) -> list | None:
+        """All receipts for one block in a single RPC call (``eth_getBlockReceipts``).
+
+        One call instead of one-per-tx: this is what keeps block processing at chain speed."""
+        return await self.call("eth_getBlockReceipts", [hex(number) if isinstance(number, int) else number])
+
+    async def batch_calls(self, calls: list[tuple[str, list]]) -> list[Any]:
+        """Run many JSON-RPC calls in ONE round-trip, chunked to the provider's batch limit.
+
+        drpc (free) rejects batches >3 requests, so we slice into ≤3-call sub-batches; still a large
+        win over N round-trips. Returns the results in the same order, ``None`` for failures."""
+        if not calls:
+            return []
+        MAX_CHUNK = 3
+        out: list[Any] = [None] * len(calls)
+        for start in range(0, len(calls), MAX_CHUNK):
+            chunk = calls[start:start + MAX_CHUNK]
+            batch = [{"jsonrpc": "2.0", "id": i, "method": m, "params": p}
+                     for i, (m, p) in enumerate(chunk)]
+            async with self.sem:
+                await self._pace()
+                self.n_calls += len(chunk)
+                try:
+                    async with self.session.post(self.url, json=batch) as r:
+                        if r.status == 429:
+                            self.next_t += 1.0
+                        payload = await r.read()
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    self.n_retry += 1
+                    self.last_error = repr(e)[:200]
+                    continue
+            try:
+                responses = json.loads(payload)
+                if isinstance(responses, list):
+                    by_id = {resp.get("id"): resp for resp in responses if isinstance(resp, dict)}
+                    for i in range(len(chunk)):
+                        resp = by_id.get(i)
+                        if resp is not None and "error" not in resp:
+                            out[start + i] = resp.get("result")
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return out
+
     async def call_view(self, to: str, data: str, block: str = "latest") -> Any:
         return await self.call("eth_call", [{"to": to, "data": data}, block])
 
