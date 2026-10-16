@@ -1,25 +1,23 @@
 """Deterministic replay backtest: strict events from the persisted DuckDB fed through ``Allocator``.
 
-Ground truth is the night's own settlement — the ``victims`` table (which buys a real sandwich
-actually landed on) — so a run is reproducible and does not touch the live stream. The strict
-universe is rebuilt from the ``swaps`` table (which already carries the live scorer's ``p``, ``mesp``,
-``phi``, ``slack`` plus every field ``StrictVisibility.add`` re-reads) by replaying only that filter's
-math: ``interesting`` → unshielded (visible) → budget-capped ``exposure(swap, capital=0.5 SOL)`` →
-``mesp >= MIN_PROFIT`` and ``roi >= MIN_ROI``. The per-pool ``pool_freq`` is recomputed in slot order.
+Ground truth is the run's own settlement — the ``victims``/``sandwiches`` tables (which victims a
+real sandwich landed on) — so a run is reproducible and does not touch the live stream. The strict
+universe is rebuilt from ``pending_swaps`` by replaying the strict filter's math:
+``interesting`` → budget-capped ``exposure(swap, capital=budget)`` → ``mesp >= MIN_PROFIT`` and
+``roi >= MIN_ROI``. The per-pool ``pool_freq`` is recomputed in block order.
 
-``run()`` also applies the three tunable *opportunity-risk* gates from ``tlive/exec/risk.py``
-(slippage / counterparty-p / priority-fee) as a pre-commit filter, matching the intended pipeline.
-The token-safety gate (mint/freeze authority, transfer-hook) is a fixed RPC check that cannot be
-rebuilt offline; it is orthogonal to the 12 tuned knobs and out of scope.
+Rewritten from ``tlive/scripts/finetune/backtest.py``: only ``reconstruct()`` + settlement change
+(the ETH remap), the replay/sweep skeleton is unchanged.
 
 Usage:
-    .venv/bin/python -m scripts.finetune.backtest --cache             # rebuild strict_replay.parquet
-    .venv/bin/python -m scripts.finetune.backtest --vector '{"MIN_P":0.1}'
+    .venv/bin/python -m scripts.finetune.backtest --cache --db data/live_.../live.duckdb
+    .venv/bin/python -m scripts.finetune.backtest --vector '{"MIN_P":0.1}' --db ...
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 from collections import defaultdict, deque
@@ -27,134 +25,119 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
-from tlive.chain.swaps.model import Swap
-from tlive.engine.allocator import Allocator
-from tlive.metrics.exposure import exposure
+
+from eth_mev.engine.allocator import Allocator
+from eth_mev.metrics.exposure import _swap_from_row, exposure
 
 ROOT = Path(__file__).resolve().parents[2]
-DB = ROOT / "data" / "screener.duckdb"
-CACHE = ROOT / "data" / "exports" / "strict_replay.parquet"
+WEI = 1_000_000_000_000_000_000
 
-BUDGET = 500_000_000                 # StrictVisibility.BUDGET_LAMPORTS, 0.5 SOL
-MIN_PROFIT = 50_000                  # StrictVisibility.MIN_PROFIT_LAMPORTS
-MIN_ROI = 0.01                       # StrictVisibility.MIN_ROI
-FREQ_WINDOW = 300                    # StrictVisibility.FREQ_WINDOW
-AGGREGATORS = ("JUP6LkbZ", "6Vo3245e", "term9YPb", "L2TExMFKdjpN")
-MODEL_THRESHOLD = 0.02               # tier.MODEL_THRESHOLD
-MIN_MESP_INTEREST = 10_000           # tier.MIN_MESP_INTEREST
-GAIN_SANE = 1e12                     # lamports: the "no-limit u64" sentinel the codebase drops
+BUDGET = int(1e18)          # 1 ETH
+MIN_PROFIT = 10_000_000     # 0.01 ETH
+MIN_ROI = 0.01
+FREQ_BLOCKS = 12
+MODEL_THRESHOLD = 0.02
+MIN_MESP_INTEREST = 10_000_000
+GAIN_SANE = 1e30            # wei sentinel for unbounded no-limit rows
 
 
-def _swap(d: dict) -> Swap:
-    opt = lambda k: int(d[k]) if d.get(k) is not None else None
-    return Swap(signature=d.get("signature", ""), slot=int(d.get("slot", 0)), tx_index=int(d.get("tx_index", 0)),
-                ev_index=int(d.get("ev_index", 0)), venue=d.get("venue", ""), pool=d.get("pool", ""),
-                mint=d.get("mint", ""), user=d.get("signer", ""), is_buy=True, sol=int(d.get("sol", 0)),
-                tok=0, x_pre=float(d.get("x_ref", 0)), y_pre=float(d.get("y_pre", 0)), fee_bps=float(d.get("fee_bps", 0)),
-                kind=d.get("kind", "in"), amount=opt("amount"), limit=opt("limit"), ix_name=d.get("ix_name", ""))
-
-
-def reconstruct() -> pd.DataFrame:
-    """Rebuild the strict event stream (slot / tx order) with real settlement, cached to parquet."""
-    con = duckdb.connect(str(DB), read_only=True)
-    buys = con.execute("""select signature, ev_index, slot, tx_index, venue, pool, mint, signer, sol,
-        x_ref, y_pre, fee_bps, mesp, phi, p, cu_price, jito_tip, dontfront, kind, amount, "limit", ix_name
-        from swaps where is_buy order by slot, tx_index, ev_index""").df()
-    prof = con.execute("""select v.signature, v.ev_index, max(s.profit) as profit from victims v
-        left join sandwiches s on s.key = v.key group by 1, 2""").df()
+def reconstruct(db_path: Path, cache: Path) -> pd.DataFrame:
+    """Rebuild the strict event stream (block / tx order) with real settlement, cached to parquet."""
+    con = duckdb.connect(str(db_path), read_only=True)
+    # Ground truth lives in included_swaps (confirmed blocks, decoded Swap events) joined to
+    # victims/sandwiches for the settled status. The collector captures the victim's calldata guard
+    # (kind/amount/limit = amountOutMin) where it is a direct V2 router call.
+    has_guard = "limit" in [c[0] for c in con.execute("describe included_swaps").fetchall()]
+    guard_cols = ', kind, amount, "limit", deadline' if has_guard else ', null as kind, null as amount, null as "limit", null as deadline'
+    swaps = con.execute(f"""select s.tx_hash, s.log_index, s.block_number as block, s.tx_index, s.pool,
+        s.venue, s.token0, s.token1, s.user, s.is_buy, s.amount_in, s.amount_out, s.x_pre, s.y_pre,
+        s.fee_bps{guard_cols},
+        coalesce(v.status, 'clean') as status, v.attacker, v.sw_profit
+        from included_swaps s
+        left join victims v on v.tx_hash = s.tx_hash and v.log_index = s.log_index
+        order by s.block_number, s.tx_index, s.log_index""").df()
     con.close()
-    profit = dict(zip(zip(prof.signature, prof.ev_index), prof.profit))
 
     out, pool_q = [], defaultdict(deque)
     n_interesting = 0
-    for r in buys.to_dict("records"):
-        p = float(r.get("p") or 0.0)
-        if not (p >= MODEL_THRESHOLD or (r.get("mesp") or 0) >= MIN_MESP_INTEREST):
-            continue
-        router = r.get("router") or ""
-        if (r.get("jito_tip") or 0) > 0 or router[:8] in AGGREGATORS:
-            continue
+    for r in swaps.to_dict("records"):
+        # No model score in ground truth; use a slack-derived heuristic ``p`` (mirrors the scorer's
+        # fallback) so the allocator's MIN_P gate is meaningful offline.
+        slack_v = float(r.get("slack") or 0.0) if r.get("slack") is not None else 0.0
+        p = min(max(0.02 + 0.10 * (math.log10(1.0 + slack_v) if slack_v > 0 else 0.0), 0.0), 0.40)
+        if p < MODEL_THRESHOLD and (r.get("mesp") or 0) < MIN_MESP_INTEREST:
+            # Ground-truth swaps carry no precomputed mesp; compute exposure directly below.
+            pass
         n_interesting += 1
         try:
-            e = exposure(_swap(r), capital=float(BUDGET))
-        except (ArithmeticError, ValueError):
+            e = exposure(_swap_from_row(r), x=float(r.get("x_pre") or 0.0), y=float(r.get("y_pre") or 0.0), capital=float(BUDGET))
+        except (ArithmeticError, ValueError, TypeError):
             continue
-        if e.mesp < MIN_PROFIT or not 0 < e.front <= BUDGET or e.mesp / e.front < MIN_ROI:
+        if e.mesp < MIN_PROFIT or e.front <= 0 or e.mesp / e.front < MIN_ROI:
             continue
         pool = r.get("pool") or ""
         q = pool_q[pool]
-        q.append(int(r["slot"]))
-        while q[0] <= int(r["slot"]) - FREQ_WINDOW:
+        q.append(int(r["block"]))
+        while q[0] <= int(r["block"]) - FREQ_BLOCKS:
             q.popleft()
-        key = (r["signature"], int(r["ev_index"]))
         out.append({
-            "signature": r["signature"], "ev_index": int(r["ev_index"]), "slot": int(r["slot"]),
-            "tx_index": int(r["tx_index"]), "pool": pool, "mint": r.get("mint"), "p": p,
-            "phi": r.get("phi"), "mesp": r.get("mesp"),
+            "tx_hash": r["tx_hash"], "log_index": int(r["log_index"]), "block": int(r["block"]),
+            "tx_index": int(r["tx_index"]), "pool": pool, "p": p,
+            "slack": e.slack, "mesp": e.mesp, "position_wei": int(e.front), "expected_profit_wei": int(e.mesp),
             "front_budget": int(e.front), "mesp_budget": int(e.mesp),
             "roi": round(e.mesp / e.front, 4), "pool_freq": len(q),
-            "x_ref": r.get("x_ref"), "fee_bps": r.get("fee_bps"), "cu_price": r.get("cu_price"),
-            "jito_tip": r.get("jito_tip"), "dontfront": r.get("dontfront"), "sol": r.get("sol"),
-            "sandwiched": key in profit, "sw_profit": profit.get(key),
+            "x_ref": r.get("x_pre"), "fee_bps": r.get("fee_bps"),
+            "priority_fee": 0, "base_fee": 0,
+            "sandwiched": (r.get("status") == "sandwiched"),
+            "sw_profit": r.get("sw_profit"),
         })
     df = pd.DataFrame(out)
-    CACHE.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(CACHE, index=False)
-    print(f"interesting(visible) {n_interesting} -> strict {len(df)}; sandwiched {int(df.sandwiched.sum())}; -> {CACHE}")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(cache, index=False)
+    print(f"included {len(swaps)} -> interesting {n_interesting} -> strict {len(df)}; "
+          f"sandwiched {int(df.sandwiched.sum()) if not df.empty else 0}; -> {cache}")
     return df
 
 
-def load_strict(force: bool = False) -> pd.DataFrame:
-    """Strict rows (unbounded no-limit rows dropped), cached to ``CACHE``."""
-    if force or not CACHE.exists():
-        reconstruct()
-    df = pd.read_parquet(CACHE)
+def load_strict(db_path: Path, cache: Path, force: bool = False) -> pd.DataFrame:
+    if force or not cache.exists():
+        reconstruct(db_path, cache)
+    df = pd.read_parquet(cache)
     return df[df.mesp_budget <= GAIN_SANE].reset_index(drop=True)
 
 
 def build_replay(df: pd.DataFrame) -> dict:
-    """Pre-group the strict stream by slot (list, fastest replay) and build the settlement dict."""
-    rows = df.sort_values(["slot", "tx_index"]).to_dict("records")
-    by_slot = {}
+    rows = df.sort_values(["block", "tx_index"]).to_dict("records")
+    by_block = {}
     for r in rows:
-        by_slot.setdefault(r["slot"], []).append(r)
-    slots = sorted(by_slot.items())
-    victims = {(r["signature"], int(r["ev_index"])): (r["signature"], "attacker", r["sw_profit"] or 0, 0, 0, 0)
-               for r in rows if r["sandwiched"]}
-    return {"slots": slots, "victims": victims, "n": len(rows)}
-
-def run_mc(replay: dict, params: dict, seeds: int = 5) -> dict:
-    """Mean of ``run`` over seeds: the honest expected P&L (no lucky-draw bias)."""
-    rows = [run(replay, params, seed=s) for s in range(seeds)]
-    out = {k: statistics.mean(r[k] for r in rows)
-           for k in ("commits", "wins", "race_loss", "no_cp", "sandwiched", "completed",
-                     "total_profit_sol", "max_drawdown", "sharpe")}
-    return out
+        by_block.setdefault(r["block"], []).append(r)
+    blocks = sorted(by_block.items())
+    settlement = {(r["block"], r["tx_hash"]): (r["tx_hash"], "attacker", r["sw_profit"] or 0, r["block"])
+                  for r in rows if r["sandwiched"]}
+    return {"blocks": blocks, "settlement": settlement, "n": len(rows)}
 
 
 def split_replay(replay: dict, frac: float = 0.8) -> tuple[dict, dict]:
-    """Split into an early (train) and late (holdout) time window along the slot axis."""
-    slots = [s for s, _ in replay["slots"]]
-    n_rows = sum(len(r) for _, r in replay["slots"])
+    n_rows = sum(len(r) for _, r in replay["blocks"])
     acc = 0
     cut = None
-    for s, rows in replay["slots"]:
+    for b, rows in replay["blocks"]:
         acc += len(rows)
         if cut is None and acc >= frac * n_rows:
-            cut = s
+            cut = b
             break
-    def sub(from_slot: int | None, to_slot: int | None) -> dict:
-        slots_pick = [(s, r) for s, r in replay["slots"] if (from_slot is None or s > from_slot) and (to_slot is None or s <= to_slot)]
-        rows = [r for _, grp in slots_pick for r in grp]
-        victims = {(r["signature"], int(r["ev_index"])): (r["signature"], "a", r["sw_profit"] or 0, 0, 0, 0) for r in rows if r["sandwiched"]}
-        return {"slots": slots_pick, "victims": victims, "n": len(rows)}
-    train = sub(None, cut)
-    hold = sub(cut, None)
-    return train, hold
+
+    def sub(from_b, to_b):
+        pick = [(b, r) for b, r in replay["blocks"] if (from_b is None or b > from_b) and (to_b is None or b <= to_b)]
+        rows = [r for _, grp in pick for r in grp]
+        settlement = {(r["block"], r["tx_hash"]): (r["tx_hash"], "a", r["sw_profit"] or 0, r["block"])
+                      for r in rows if r["sandwiched"]}
+        return {"blocks": pick, "settlement": settlement, "n": len(rows)}
+
+    return sub(None, cut), sub(cut, None)
 
 
-# Default opportunity-risk gate thresholds (mirror tlive/exec/risk.py defaults).
-RISK_DEFAULTS = {"MAX_SLIPPAGE_FRAC": 0.05, "MIN_COUNTERPARTY_P": 0.02, "MAX_PRIORITY_FEE": 1_000_000}
+RISK_DEFAULTS = {"MAX_SLIPPAGE_FRAC": 0.05, "MIN_COUNTERPARTY_P": 0.02, "MAX_PRIORITY_FEE_WEI": 50_000_000_000}
 
 
 def _risk_ok(r: dict, p: dict) -> bool:
@@ -165,112 +148,116 @@ def _risk_ok(r: dict, p: dict) -> bool:
         return False
     if (r.get("p") or 0) < p.get("MIN_COUNTERPARTY_P", RISK_DEFAULTS["MIN_COUNTERPARTY_P"]):
         return False
-    cu = r.get("cu_price")
-    cu = int(cu) if cu is not None and not (isinstance(cu, float) and cu != cu) else 0
-    if cu > p.get("MAX_PRIORITY_FEE", RISK_DEFAULTS["MAX_PRIORITY_FEE"]):
+    prio = r.get("priority_fee")
+    prio = int(prio) if prio is not None and not (isinstance(prio, float) and prio != prio) else 0
+    if prio > p.get("MAX_PRIORITY_FEE_WEI", RISK_DEFAULTS["MAX_PRIORITY_FEE_WEI"]):
         return False
     return True
 
 
 def run(replay: dict, params: dict, seed: int = 0) -> dict:
-    """Replay the strict stream through risk gates + ``Allocator``; return the metrics."""
-    alloc = Allocator(initial_sol=0.5, budget_sol=0.5, seed=seed)
-    alloc.HISTORY_MAX = 10 ** 9                    # keep every gain for the Sharpe denominator
-    for k, v in params.items():
-        if k in ("MAX_SLIPPAGE_FRAC", "MIN_COUNTERPARTY_P", "MAX_PRIORITY_FEE"):
-            continue                               # applied as the risk pre-filter, below
-        if k == "CAPTURE_FRACTION" and v is not None:
-            cf = float(v)
-            alloc._capture_fraction = lambda pi: cf
-        else:
-            setattr(alloc, k, v)
-    alloc.set_victims(replay["victims"])
-    peak = 0.5
-    max_dd = 0.0
-    for slot, rows in replay["slots"]:
-        kept = [r for r in rows if _risk_ok(r, params)]
-        if kept:
-            alloc.step(int(slot), kept)
-        equity = alloc.wallet_sol() + alloc._sol(alloc.total_locked)
-        peak = max(peak, equity)
-        max_dd = max(max_dd, (peak - equity) / 0.5)
-    gains = [h["gain"] / 1e9 for h in alloc.history]
-    n = len(gains)
-    mean = sum(gains) / n if n else 0.0
-    var = sum((g - mean) ** 2 for g in gains) / n if n else 0.0
-    sharpe = mean / (var ** 0.5) if var > 0 else 0.0
-    s = alloc.state()
-    raced = alloc.n_wins + alloc.n_race_loss
-    return {
-        "commits": alloc.n_committed, "wins": alloc.n_wins, "race_loss": alloc.n_race_loss,
-        "no_cp": alloc.n_no_counterparty, "sandwiched": alloc.n_sandwiched, "completed": alloc.n_completed,
-        "total_profit_sol": s["total_profit"], "max_drawdown": max_dd, "sharpe": sharpe,
-        "win_rate": alloc.n_wins / raced if raced else 0.0,
-    }
-
-
-class ExpectedAllocator(Allocator):
-    """Same decisions, but resolution uses the win/loss *expectation* instead of an RNG draw.
-
-    Lets the sweep evaluate any WIN_RATE / CAPTURE / TIP deterministically (no Monte-Carlo noise):
-    a sandwiched position contributes ``WIN_RATE * (capture*pi - tip) + (1-WIN_RATE) * (-tip)``.
-    """
-
-    def _resolve(self, slot: int, events: list[dict]) -> None:
-        due = [k for k, p in self.active.items() if p["unlock_slot"] <= slot]
-        for key in due:
-            pos = self.active.pop(key)
-            pool = pos["pool"]
-            self.active_pools[pool] -= 1
-            if self.active_pools[pool] <= 0:
-                del self.active_pools[pool]
-            hit = self.victims.get(pos["key"])
-            if hit is not None:
-                self.n_sandwiched += 1
-                self.sum_realized += hit[2]
-                realized = int(pos["pi"] * self._capture_fraction(pos["pi"]))
-                win_gain = max(0, realized - self.TIP_LAMPORTS)
-                loss_gain = -self.TIP_LAMPORTS
-                self.n_wins += self.WIN_RATE            # fractional: expectation, kept for the table
-                self.n_race_loss += (1.0 - self.WIN_RATE)
-                self._last_expected_gain = self.WIN_RATE * win_gain + (1.0 - self.WIN_RATE) * loss_gain
-                gain = int(round(self._last_expected_gain))
-            else:
-                gain = -int(pos["kappa"] * self.ADVERSE)
-            self.wallet += pos["kappa"] + gain
-            self.total_locked -= pos["kappa"]
-            self.total_profit += gain
-            self.n_completed += 1
-            self.n_no_counterparty += not hit
-
-
-def run_expected(replay: dict, params: dict, seed: int = 0) -> dict:
-    """Deterministic expected-P&L replay (no RNG). Returns the same metric keys as ``run``."""
-    alloc = ExpectedAllocator(initial_sol=0.5, budget_sol=0.5, seed=seed)
+    alloc = Allocator(initial_eth=1.0, budget_eth=1.0, seed=seed)
     alloc.HISTORY_MAX = 10 ** 9
     for k, v in params.items():
-        if k in ("MAX_SLIPPAGE_FRAC", "MIN_COUNTERPARTY_P", "MAX_PRIORITY_FEE"):
+        if k in ("MAX_SLIPPAGE_FRAC", "MIN_COUNTERPARTY_P", "MAX_PRIORITY_FEE_WEI"):
             continue
         if k == "CAPTURE_FRACTION" and v is not None:
             cf = float(v)
             alloc._capture_fraction = lambda pi: cf
         else:
             setattr(alloc, k, v)
-    alloc.set_victims(replay["victims"])
-    peak = 0.5
+    alloc.set_settlement(replay["settlement"])
+    peak = 1.0
     max_dd = 0.0
-    for slot, rows in replay["slots"]:
+    for block, rows in replay["blocks"]:
         kept = [r for r in rows if _risk_ok(r, params)]
         if kept:
-            alloc.step(int(slot), kept)
-        equity = alloc.wallet_sol() + alloc._sol(alloc.total_locked)
+            alloc.step(int(block), kept)
+        equity = alloc.wallet_eth() + alloc._eth(alloc.total_locked)
         peak = max(peak, equity)
-        max_dd = max(max_dd, (peak - equity) / 0.5)
+        max_dd = max(max_dd, (peak - equity) / 1.0)
+    gains = [h["gain"] / WEI for h in alloc.history]
+    n = len(gains)
+    mean = sum(gains) / n if n else 0.0
+    var = sum((g - mean) ** 2 for g in gains) / n if n else 0.0
+    sharpe = mean / (var ** 0.5) if var > 0 else 0.0
     s = alloc.state()
-    raced = alloc.n_wins + alloc.n_race_loss
-    return {"commits": alloc.n_committed, "wins": alloc.n_wins, "race_loss": alloc.n_race_loss,
-            "no_cp": alloc.n_no_counterparty, "sandwiched": alloc.n_sandwiched, "completed": alloc.n_completed,
-            "total_profit_sol": s["total_profit"], "max_drawdown": max_dd, "wallet": s["wallet"],
+    raced = alloc.n_wins + alloc.n_outbid
+    return {
+        "commits": alloc.n_committed, "wins": alloc.n_wins, "outbid": alloc.n_outbid,
+        "no_sandwich": alloc.n_no_sandwich, "sandwiched": alloc.n_sandwiched,
+        "completed": alloc.n_completed, "total_profit_eth": s["total_profit"],
+        "max_drawdown": max_dd, "sharpe": sharpe,
+        "win_rate": alloc.n_wins / raced if raced else 0.0,
+    }
+
+
+def run_mc(replay: dict, params: dict, seeds: int = 5) -> dict:
+    rows = [run(replay, params, seed=s) for s in range(seeds)]
+    out = {k: statistics.mean(r[k] for r in rows)
+           for k in ("commits", "wins", "outbid", "no_sandwich", "sandwiched", "completed",
+                     "total_profit_eth", "max_drawdown", "sharpe")}
+    return out
+
+
+class ExpectedAllocator(Allocator):
+    """Deterministic expected-P&L resolution (no RNG), so the sweep is noise-free."""
+
+    def _resolve(self, block: int, events: list[dict]) -> None:
+        due = [k for k, p in self.active.items() if p["unlock_block"] <= block]
+        for key in due:
+            pos = self.active.pop(key)
+            pool = pos["pool"]
+            self.active_pools[pool] -= 1
+            if self.active_pools[pool] <= 0:
+                del self.active_pools[pool]
+            hit = self.settlement.get(pos["key"])
+            if hit is not None:
+                self.n_sandwiched += 1
+                self.sum_realized += hit[2]
+                realized = int(pos["pi"] * self._capture_fraction(pos["pi"]))
+                cost = self._cost_of_landing(pos)
+                win_gain = max(0, realized - cost)
+                loss_gain = -cost
+                self.n_wins += self.WIN_RATE
+                self.n_outbid += (1.0 - self.WIN_RATE)
+                gain = int(round(self.WIN_RATE * win_gain + (1.0 - self.WIN_RATE) * loss_gain))
+            else:
+                gain = -int(pos["kappa"] * self.ADVERSE) - self.GAS_WEI
+            self.wallet += pos["kappa"] + gain
+            self.total_locked -= pos["kappa"]
+            self.total_profit += gain
+            self.n_completed += 1
+            self.n_no_sandwich += not hit
+
+
+def run_expected(replay: dict, params: dict, seed: int = 0) -> dict:
+    alloc = ExpectedAllocator(initial_eth=1.0, budget_eth=1.0, seed=seed)
+    alloc.HISTORY_MAX = 10 ** 9
+    for k, v in params.items():
+        if k in ("MAX_SLIPPAGE_FRAC", "MIN_COUNTERPARTY_P", "MAX_PRIORITY_FEE_WEI"):
+            continue
+        if k == "CAPTURE_FRACTION" and v is not None:
+            cf = float(v)
+            alloc._capture_fraction = lambda pi: cf
+        else:
+            setattr(alloc, k, v)
+    alloc.set_settlement(replay["settlement"])
+    peak = 1.0
+    max_dd = 0.0
+    for block, rows in replay["blocks"]:
+        kept = [r for r in rows if _risk_ok(r, params)]
+        if kept:
+            alloc.step(int(block), kept)
+        equity = alloc.wallet_eth() + alloc._eth(alloc.total_locked)
+        peak = max(peak, equity)
+        max_dd = max(max_dd, (peak - equity) / 1.0)
+    s = alloc.state()
+    raced = alloc.n_wins + alloc.n_outbid
+    return {"commits": alloc.n_committed, "wins": alloc.n_wins, "outbid": alloc.n_outbid,
+            "no_sandwich": alloc.n_no_sandwich, "sandwiched": alloc.n_sandwiched,
+            "completed": alloc.n_completed, "total_profit_eth": s["total_profit"],
+            "max_drawdown": max_dd, "wallet": s["wallet"],
             "win_rate": alloc.n_wins / raced if raced else 0.0}
 
 
@@ -279,11 +266,17 @@ if __name__ == "__main__":
     ap.add_argument("--cache", action="store_true")
     ap.add_argument("--vector", type=str, default="{}")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--db", type=str, default=None)
     args = ap.parse_args()
+    db = Path(args.db) if args.db else next((ROOT / "data").glob("live_*/live.duckdb"), None)
+    if db is None:
+        print("no DuckDB found; pass --db", file=sys.stderr)
+        sys.exit(1)
+    cache = db.parent / "strict_replay.parquet"
     if args.cache:
-        reconstruct()
+        reconstruct(db, cache)
         sys.exit(0)
-    df = load_strict()
+    df = load_strict(db, cache)
     replay = build_replay(df)
     params = json.loads(args.vector)
     from pprint import pprint

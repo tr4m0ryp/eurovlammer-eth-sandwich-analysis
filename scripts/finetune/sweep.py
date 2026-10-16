@@ -1,10 +1,7 @@
 """Parameter sweep + refinement for the capital-allocation engine (read-only, offline replay).
 
-Searches the *selection* knobs (which targets to commit and how large) at a reference *resolution*
-(WIN_RATE / CAPTURE_FRACTION / TIP_LAMPORTS), then reports the resolution sensitivity analytically.
-
-    .venv/bin/python -m scripts.finetune.sweep --n 1500            # random search
-    .venv/bin/python -m scripts.finetune.sweep --refine            # coordinate descent on the best
+Searches the *selection* knobs at a reference *resolution* (WIN_RATE / CAPTURE_FRACTION / BRIBE_WEI),
+then reports the resolution sensitivity analytically. Adapted from ``tlive/scripts/finetune/sweep.py``.
 """
 from __future__ import annotations
 
@@ -16,29 +13,28 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from backtest import build_replay, load_strict, run, run_expected, run_mc  # noqa: E402
+from backtest import build_replay, load_strict, run_mc  # noqa: E402
 
-MC_SEEDS = 5                      # seeds per evaluation during the fast search/refine
+MC_SEEDS = 5
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "data" / "exports" / "finetune"
 
-# Ranges (prompt suggestions).
+# Ranges (finetune-prompt.md suggestions, ETH).
 RANGES = {
     "MIN_P": (0.02, 0.4),
-    "MIN_PI_LAMPORTS": (100_000, 5_000_000),          # log-uniform
+    "MIN_PROFIT_WEI": (100_000, 5_000_000_000),       # log-uniform wei
     "THETA0": (0.004, 0.03),
     "THETA_INF": (0.001, 0.012),
     "BETA": (0.0, 0.02),
     "ALPHA_SCARCE": (0.25, 1.0),
     "MAX_SLIPPAGE_FRAC": (0.02, 0.2),
     "MIN_COUNTERPARTY_P": (0.0, 0.1),
-    "MAX_PRIORITY_FEE": (100_000, 5_000_000),         # log-uniform
+    "MAX_PRIORITY_FEE_WEI": (1_000_000_000, 200_000_000_000),   # log-uniform wei
 }
-LOG_UNIFORM = {"MIN_PI_LAMPORTS", "MAX_PRIORITY_FEE"}
+LOG_UNIFORM = {"MIN_PROFIT_WEI", "MAX_PRIORITY_FEE_WEI"}
 
-# Reference resolution settings (the current live defaults).
-REFERENCE = {"WIN_RATE": 0.5, "TIP_LAMPORTS": 100_000, "CAPTURE_FRACTION": None}  # None = size-dependent
+REFERENCE = {"WIN_RATE": 0.5, "BRIBE_WEI": int(0.01 * 1e18), "CAPTURE_FRACTION": None}
 
 FEASIBLE_COMMITS = 50
 FEASIBLE_DD = 0.25
@@ -48,8 +44,8 @@ def sample(rng: random.Random) -> dict:
     p = {}
     for k, (lo, hi) in RANGES.items():
         if k in LOG_UNIFORM:
-            p[k] = float(math.exp(rng.uniform(math.log(lo), math.log(hi))))
-            p[k] = int(round(p[k]))
+            v = math.exp(rng.uniform(math.log(lo), math.log(hi)))
+            p[k] = int(round(v))
         else:
             p[k] = rng.uniform(lo, hi)
     return p
@@ -60,12 +56,10 @@ def feasible(m: dict) -> bool:
 
 
 def score(m: dict) -> tuple:
-    """Ranking tuple: feasibility first, then expected profit, then Sharpe."""
-    return (feasible(m), m["total_profit_sol"], m.get("sharpe", 0.0))
+    return (feasible(m), m["total_profit_eth"], m.get("sharpe", 0.0))
 
 
-def evaluate(replay: dict, params: dict, seed: int = 0) -> dict:
-    """Monte-Carlo mean P&L across the win/race draws: the honest (unbiased) objective."""
+def evaluate(replay: dict, params: dict) -> dict:
     m = run_mc(replay, dict(REFERENCE, **params), seeds=MC_SEEDS)
     m["params"] = params
     return m
@@ -73,22 +67,17 @@ def evaluate(replay: dict, params: dict, seed: int = 0) -> dict:
 
 def search(replay: dict, n: int, rng_seed: int = 1) -> list[dict]:
     rng = random.Random(rng_seed)
-    results = []
-    for _ in range(n):
-        results.append(evaluate(replay, sample(rng)))
+    results = [evaluate(replay, sample(rng)) for _ in range(n)]
     results.sort(key=score, reverse=True)
     return results
 
 
-def refine(replay: dict, start: dict, steps: int = 8, rng_seed: int = 7) -> dict:
-    """Coordinate descent: vary one knob at a time, keep moves that improve the score."""
+def refine(replay: dict, start: dict, steps: int = 8) -> dict:
     best_p = dict(start)
     best_m = evaluate(replay, best_p)
     for _ in range(steps):
         improved = False
         for k, (lo, hi) in RANGES.items():
-            sign = 1 if k in LOG_UNIFORM else 1
-            # multiplicative step for log-uniform, additive for linear
             for d in (-1, 1):
                 if k in LOG_UNIFORM:
                     v = best_p[k] * (1.3 if d > 0 else 1 / 1.3)
@@ -106,34 +95,26 @@ def refine(replay: dict, start: dict, steps: int = 8, rng_seed: int = 7) -> dict
     return best_m
 
 
-def hist(results: list[dict]) -> None:
-    pr = [r["total_profit_sol"] for r in results]
-    pr.sort()
-    n = len(pr)
-    feas = [r for r in results if feasible(r)]
-    print(f"profit distribution (n={n}): min {pr[0]:.4f}  p10 {pr[n//10]:.4f}  median {pr[n//2]:.4f}  "
-          f"p90 {pr[9*n//10]:.4f}  max {pr[-1]:.4f}")
-    print(f"positive: {sum(1 for x in pr if x > 0)}/{n}   "
-          f"feasible (commits>={FEASIBLE_COMMITS}, dd<={FEASIBLE_DD}): {len(feas)}/{n}")
-
-
 def show(results: list[dict], top: int = 12) -> None:
-    print(f"{'profit':>8} {'commits':>8} {'wins':>5} {'race':>5} {'no_cp':>6} {'hit':>5} {'dd':>6}  params")
+    print(f"{'profit':>8} {'commits':>8} {'wins':>5} {'outbid':>6} {'no_sw':>6} {'hit':>5} {'dd':>6}  params")
     for r in results[:top]:
         hit = r["sandwiched"] / r["commits"] if r["commits"] else 0
         p = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in r["params"].items()}
-        print(f"{r['total_profit_sol']:8.4f} {r['commits']:8d} {r['wins']:5.1f} {r['race_loss']:5.1f} "
-              f"{r['no_cp']:6d} {hit:5.2f} {r['max_drawdown']:6.3f}  {p}")
+        print(f"{r['total_profit_eth']:8.4f} {r['commits']:8d} {r['wins']:5.1f} {r['outbid']:6.1f} "
+              f"{r['no_sandwich']:6d} {hit:5.2f} {r['max_drawdown']:6.3f}  {p}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=1500)
-    ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--refine-best", type=str, default=None, help="JSON params to refine")
+    ap.add_argument("--db", type=str, default=None)
+    ap.add_argument("--refine-best", type=str, default=None)
     args = ap.parse_args()
-
-    df = load_strict()
+    db = Path(args.db) if args.db else next((ROOT / "data").glob("live_*/live.duckdb"), None)
+    if db is None:
+        print("no DuckDB found; pass --db", file=sys.stderr)
+        sys.exit(1)
+    df = load_strict(db, db.parent / "strict_replay.parquet")
     replay = build_replay(df)
     OUT.mkdir(parents=True, exist_ok=True)
     if args.refine_best:
@@ -141,18 +122,6 @@ if __name__ == "__main__":
         show([m], top=1)
         (OUT / "best.json").write_text(json.dumps(m, indent=2, default=float))
         sys.exit(0)
-
-    results = search(replay, args.n, args.seed)
-    hist(results)
+    results = search(replay, args.n)
     show(results, top=15)
     (OUT / f"random_{args.n}.json").write_text(json.dumps(results, indent=2, default=float))
-    after = []
-    for r in results[:6]:
-        print("\nrefining:", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in r["params"].items()})
-        m = refine(replay, r["params"])
-        after.append(m)
-    after.sort(key=score, reverse=True)
-    print("\n=== refined ===")
-    show(after, top=6)
-    (OUT / "refined.json").write_text(json.dumps(after, indent=2, default=float))
-    (OUT / "best.json").write_text(json.dumps(after[0], indent=2, default=float))
