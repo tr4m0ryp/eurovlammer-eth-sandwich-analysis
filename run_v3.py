@@ -13,26 +13,39 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import time
 from pathlib import Path
 
 from eth_mev.chain.tx import normalized_tx
 from eth_mev.chain.v3_pool import fetch_pool_states_bulk
-from eth_mev.chain.v3_swap import decode_v3_swap_logs, decode_v3_router
+from eth_mev.chain.v3_swap import (decode_v3_swap_logs, decode_v3_router,
+                                   decode_universal_router, decode_embedded_swap)
+from eth_mev.chain.aggregators import decode_aggregator
+from eth_mev.chain.private_routers import decode_private_router
 from eth_mev.chain.v3_constants import V3_ROUTERS
 from eth_mev.metrics.v3_exposure import V3Pool, exposure
 from eth_mev.metrics.v3_math import tick_at_sqrt_ratio
 from eth_mev.ingest.rpc import Rpc, rpc_url, ws_url
 from eth_mev.serve.hub import Hub
 from eth_mev.serve.server import serve
+from eth_mev.engine.v3_allocator import V3Allocator
+from eth_mev.engine.guard_estimator import GuardEstimator
 
-CAPITAL_WEI = int(1e18)  # 1 ETH front budget (dry-run)
+CAPITAL_WEI = int(float(os.environ.get("MEV_FLASH_LOAN_ETH", "10")) * 1e18)  # front cap = flash loan
 
 
 class V3Screener:
     def __init__(self, rpc: Rpc):
         self.rpc = rpc
         self.hub = Hub()
+        self.alloc = V3Allocator()
+        self.default_slippage = float(os.environ.get("MEV_DEFAULT_SLIPPAGE", "0.01"))  # fallback only
+        self.guard_est = GuardEstimator(
+            fallback=self.default_slippage,
+            percentile=float(os.environ.get("MEV_GUARD_PERCENTILE", "50")),
+            db_path=os.environ.get("MEV_GUARD_DB", str(Path(__file__).resolve().parent / "data" / "guard_estimator.duckdb")),
+        )
         self.n_blocks = self.n_swaps = self.n_strict = self.n_sandwiches = 0
         self.pool_cache: dict[str, dict] = {}
         self.pool_freq: dict[str, int] = {}
@@ -40,9 +53,11 @@ class V3Screener:
         self.funnel = {
             "decoded": 0,            # Swap events decoded from receipts
             "with_pool_state": 0,    # had resolvable pool liquidity
-            "router_decoded": 0,     # direct router call decoded a guard (amount_in + amount_out_min)
-            "guardless": 0,          # direct router call but amountOutMinimum == 0 (no slippage guard)
-            "mesp_zero": 0,          # guard present but exposure mesp <= 0 (guard <= round-trip fee)
+            "router_decoded": 0,     # direct Uniswap router call decoded a guard
+            "aggregator_decoded": 0, # aggregator (1inch/0x/paraswap) decoded a guard
+            "default_decoded": 0,    # reconstructed from the Swap event + assumed slippage
+            "guardless": 0,          # guard decoded but amountOutMinimum == 0
+            "mesp_zero": 0,          # guard present but exposure mesp <= 0 (<= round-trip fee)
             "mesp_positive": 0,      # strict (what we surface)
         }
 
@@ -72,11 +87,29 @@ class V3Screener:
             n = normalized_tx(tx)
             if not n["to"] or not n["input"] or n["input"] == "0x":
                 continue
+            # Direct router → UniversalRouter execute → aggregator → embedded-standard-swap scan.
             calldata = decode_v3_router({"to": n["to"], "input": tx.get("input"),
                                          "hash": n["hash"], "from": n["from"]})
+            via_aggregator = False
+            if calldata is None:
+                calldata = decode_universal_router({"to": n["to"], "input": tx.get("input"),
+                                                    "hash": n["hash"], "from": n["from"]})
+            if calldata is None:
+                calldata = decode_aggregator(n["to"], tx.get("input"),
+                                             {"to": n["to"], "input": tx.get("input"),
+                                              "hash": n["hash"], "from": n["from"]})
+                via_aggregator = calldata is not None
+            if calldata is None:
+                calldata = decode_embedded_swap({"to": n["to"], "input": tx.get("input"),
+                                                 "hash": n["hash"], "from": n["from"]})
+            if calldata is None:
+                calldata = decode_private_router({"to": n["to"], "input": tx.get("input"),
+                                                  "hash": n["hash"], "from": n["from"]})
             receipt = receipts_by_hash.get(n["hash"].lower())
             logs = (receipt or {}).get("logs") or []
             for s in decode_v3_swap_logs(n["hash"], number, txi, logs, calldata):
+                if via_aggregator:
+                    s.raw["via_aggregator"] = True
                 decoded.append((s, n["from"], number))
 
         # Pass 2: batch-fetch pool state for every unique pool in ONE round-trip.
@@ -99,10 +132,36 @@ class V3Screener:
         if strict_rows:
             self.hub.add_strict(strict_rows)
             self.n_strict += len(strict_rows)
+            # Feed the capital allocator: resolve matured positions, commit the best targets.
+            self.alloc.step(number, strict_rows)
+        else:
+            # still resolve matured positions on empty blocks
+            self.alloc.step(number, [])
+        self.hub.set_wallet(self.alloc.state())
         self._publish_stats()
 
     async def _pool_state(self, pool: str) -> dict:
         return self.pool_cache.get(pool) or {}
+
+    def _actual_amounts(self, s) -> tuple[int, int] | None:
+        """The victim's actual (amount_in, amount_out) from the ``Swap`` event's signed amounts."""
+        if s.amount0 > 0 and s.amount1 < 0:
+            return s.amount0, -s.amount1        # token0 in, token1 out
+        if s.amount0 < 0 and s.amount1 > 0:
+            return s.amount1, -s.amount0        # token1 in, token0 out
+        return None
+
+    def _reconstruct_victim(self, s) -> tuple[int, int] | None:
+        """Default approach: (amount_in, amount_out_min) from the event + a *learned* default guard
+        slack (data-driven, not a fixed 1%)."""
+        amts = self._actual_amounts(s)
+        if amts is None:
+            return None
+        amount_in, amount_out = amts
+        if amount_in <= 0 or amount_out <= 0:
+            return None
+        amount_out_min = self.guard_est.estimate_guard(amount_out)
+        return amount_in, amount_out_min
 
     def _score(self, s, state: dict, origin: str, number: int) -> dict | None:
         # Build the V3Pool from on-chain state; tick bitmap is fetched lazily (empty here = single
@@ -119,27 +178,51 @@ class V3Screener:
             ticks={}, token0=state.get("token0", ""), token1=state.get("token1", ""),
             numeraire_is_token0=True,
         )
-        # The victim's amount/limit come from the router calldata; a guard must be present to compute
-        # exposure. When the tx is not a direct V3 router call (aggregator), we have no guard -> skip.
+        # Exact router guard first; when it's absent, fall back to the learned default guard.
+        via_default = False
         if s.amount_in is None or s.amount_out_min is None:
-            return None
-        self.funnel["router_decoded"] += 1
-        if s.amount_out_min == 0:
+            rec = self._reconstruct_victim(s)
+            if rec is None:
+                return None
+            amount_in, amount_out_min = rec
+            via_default = True
+            self.funnel["default_decoded"] += 1
+        else:
+            amount_in, amount_out_min = s.amount_in, s.amount_out_min
+            # Observe this decodable swap's realized guard slack (single-hop only: for multi-hop the
+            # per-hop event output is a different token than the final amountOutMinimum).
+            n_hops = (s.raw or {}).get("n_hops")
+            if n_hops in (None, 1):
+                amts = self._actual_amounts(s)
+                if amts is not None:
+                    self.guard_est.observe(amts[1], amount_out_min)
+            if (s.raw or {}).get("via_aggregator"):
+                self.funnel["aggregator_decoded"] += 1
+            else:
+                self.funnel["router_decoded"] += 1
+        if amount_out_min == 0:
             self.funnel["guardless"] += 1
             return None
-        victim = {"zero_for_one": s.direction > 0, "amount_in": s.amount_in, "limit": s.amount_out_min}
+        victim = {"zero_for_one": s.direction > 0, "amount_in": amount_in, "limit": amount_out_min}
         e = exposure(pool, victim, capital=CAPITAL_WEI)
         if e.mesp <= 0 or e.front <= 0:
+            self.funnel["mesp_zero"] += 1
+            return None
+        # Sanity bounds: reject garbage exposure (Q96/unit-mismatch overflow from the private-router
+        # decoders can yield mesp up to 1e58). A sandwich can never extract more than ~10× its front,
+        # and a victim's slippage slack is never a multi-thousand-x multiplier.
+        if e.mesp > e.front * 100 or not (0.0 < e.slack < 100.0):
             self.funnel["mesp_zero"] += 1
             return None
         self.funnel["mesp_positive"] += 1
         self.pool_freq[s.pool] = self.pool_freq.get(s.pool, 0) + 1
         return {
             "tx_hash": s.tx_hash, "block": number, "pool": s.pool,
-            "fee_ppm": s.fee, "price": pool.spot_price, "amount_in": s.amount_in,
-            "amount_out_min": s.amount_out_min, "mesp": e.mesp, "front": e.front,
+            "fee_ppm": s.fee, "price": pool.spot_price, "amount_in": amount_in,
+            "amount_out_min": amount_out_min, "mesp": e.mesp, "front": e.front,
             "roi": e.mesp / e.front if e.front else 0.0, "slack": e.slack,
             "pool_freq": self.pool_freq[s.pool], "zero_for_one": s.direction > 0,
+            "via_default": via_default,
             "seen_ms": int(time.time() * 1000),
         }
 
@@ -148,6 +231,8 @@ class V3Screener:
             "blocks": self.n_blocks, "swaps": self.n_swaps, "strict": self.n_strict,
             "sandwiches": self.n_sandwiches, "block": self.n_blocks,
             "funnel": dict(self.funnel),
+            "wallet": self.alloc.stats(),
+            "guard": self.guard_est.stats(),
         })
 
     async def run(self, hours: float) -> None:
@@ -173,6 +258,7 @@ class V3Screener:
                 await self.settle_block(number - 1)
         finally:
             await sub.close()
+            self.guard_est.close()
 
 
 async def main() -> None:

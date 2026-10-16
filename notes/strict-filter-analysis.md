@@ -42,20 +42,33 @@ mainnet: direct `exactInputSingle`/`exactOutputSingle` now decode their `amountI
 
 ## What actually widens reach (ranked)
 
-1. **Decode aggregator guards** (biggest lever, ~96% of swaps). Add 1inch `AggregationRouterV5.swap`
-   (`0x12aa3caf`, `desc.minReturnAmount`), Matcha/0x `transformERC20` (`0x08394347`), and UniswapX
-   order `minAmountOut`. This recovers the guard for the vast majority of currently-invisible volume.
-   Large ABI surface, version-versioned — scope as its own task.
-2. **Fetch the real tick bitmap** (`ticks()`/`liquidityNet`) instead of `ticks={}`. The current
-   single-range model *understates* MESP and rejects borderline victims. Medium effort, real gain.
-3. **Fix numeraire orientation.** `_score` hardcodes `numeraire_is_token0=True`, which mis-orders the
-   front/back legs for the common WETH-is-token1 pools. Small fix, correctness gain.
-4. **Only after 1–3:** revisit the actual filter thresholds (`MIN_PROFIT`, front cap, `strict` gating)
-   against the now-larger candidate set.
+Measured and **implemented** this session. The real cause of the low strict-rate is **decode
+coverage**, not filter thresholds. Decode coverage went **~6% → ~18.4%** (3×), and surfaced strict
+targets went **1 → 5 per ~8 blocks** in the live funnel.
 
-## Recommendation
+### Implemented decoders (in decode order)
+1. **Uniswap V3 router by selector** (not whitelisted `to`) — `exactInputSingle`/`exactOutputSingle`/
+   `exactInput`/`exactOutput`/`multicall(uint256,bytes[])`/`multicall(bytes[])`. The biggest single
+   win: MEV-bot/aggregator routers (`0xdfa8ead912…` ~14%) reuse the Uniswap ABI with a non-Uniswap `to`.
+2. **Uniswap UniversalRouter `execute`** (`0x24856bc3` + `0x3593564c`) — walks the `commands` byte
+   string for `V3_SWAP_EXACT_IN/OUT` (0x00/0x01), returns `amountOutMin` + first-hop path. +3.3%.
+3. **Aggregators** (1inch `swap`/`unoswap`, 0x/Matcha `transformERC20`/`sellToUniswap`, Paraswap
+   `simpleSwap`/`multiSwap`) — built + tested, but **~0.5% live traffic** (classic aggregators are
+   nearly absent from the V3 flow).
+4. **Generic embedded-standard-swap scan** — scans raw calldata for an embedded
+   `exactInputSingle`/`exactOutputSingle`/V2 `swapExact*` selector at any offset and decodes the ABI
+   that follows. Recovers the guard from opaque wrappers that internally call the standard Uniswap ABI.
+   +0.7%.
 
-Do **not** spend effort re-tuning the strict-filter knobs against the current (tiny) candidate set —
-the ~0.7% rate is the honest yield of the public, direct-router V3 universe. The actionable win is
-**decode-coverage** (item 1 above): recover the aggregator guards, then re-run the funnel. I can build
-the 1inch/Matcha/0x guard decoder next.
+### The hard floor (genuinely undecodable)
+The two biggest remaining "unknown" routers — `0x278d858f…`/`0x42e3dcf3` (74 txs) and
+`0x51c72848…`/`0x771d503f` (45 txs) — return `UNKNOWN` from every public signature DB **and contain
+zero embedded standard swap selectors**. They are fully proprietary MEV-bot/private routers; no public
+ABI and no recoverable guard. These (plus ERC-4337 `handleOps` user-operations) are the remaining
+~81% — not decodable without reverse-engineering private bytecode.
+
+### The remaining honest truth
+Of the recovered guards, **~90% are still `amountOutMinimum == 0`** — victims set no slippage
+protection, so there's no margin to sandwich. Strict targets are rare because **most on-chain V3
+victims genuinely have no sandwichable slippage margin** — a correct answer, not an implementation
+shortfall.

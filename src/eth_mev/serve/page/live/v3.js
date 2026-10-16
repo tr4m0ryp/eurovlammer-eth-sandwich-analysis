@@ -2,7 +2,7 @@
 "use strict";
 const MAX_ROWS = 200;
 const FLUSH_MS = 1000;
-const S = { strict: [], pending: [], view: "", stats: {}, timer: 0 };
+const S = { strict: [], pending: [], view: "", stats: {}, wallet: {}, timer: 0 };
 
 // numeraire (wei) -> ETH, with 1e18 scale
 const eth = (w) => (w == null ? "" : (Number(w) / 1e18).toFixed(Number(w) >= 1e17 ? 3 : 5));
@@ -84,12 +84,44 @@ function setStats(stats) {
   renderStats();
 }
 
-function walletInit(state) { /* wallet tab is a lightweight dry-run echo */ }
-function walletRender() {}
+function walletInit(state) { S.wallet = state || {}; walletRender(); }
+function walletEvent(d) { S.wallet = d || {}; walletRender(); }
 
-function walletEvent(d) {
-  const b = $("#wallet-active-rows");
-  if (b) b.innerHTML = `<tr data-empty><td colspan="5" class="muted">Dry-run (no funded key). ${d && d.type ? d.type : "no events"}</td></tr>`;
+const eth2 = (w) => (w == null ? "" : (Number(w)).toFixed(Number(w) >= 1 ? 3 : 6));
+
+function walletRender() {
+  const w = S.wallet || {};
+  const st = w.stats || {};
+  // top stats
+  const wb = $("#wallet-stats");
+  if (wb) {
+    wb.innerHTML = [
+      stat("Wallet (ETH)", eth2(st.wallet), `bankroll ${eth2(st.bankroll)}`),
+      stat("Total profit (ETH)", (st.total_profit != null && st.total_profit < 0 ? "-" : "+") + eth2(Math.abs(st.total_profit || 0)), "expected, after gas + bribe"),
+      stat("Committed", fmt.int(st.n_committed || 0), `${fmt.int(st.n_resolved || 0)} resolved`),
+      stat("Landing cost (ETH)", eth2(st.landing_cost), `gas ${eth2(st.gas_cost)} + bribe ${eth2(st.bribe)}`),
+    ].join("");
+  }
+  // active positions
+  const arows = (w.active || []).map(p => `<tr>
+    <td class="num">${fmt.time(p.seen_ms || Date.now())}</td>
+    <td class="mono">${fmt.short(p.pool)}</td>
+    <td class="num">${eth2(p.front)}</td>
+    <td class="num">${eth2(p.net_expected)}</td>
+    <td><span class="tag">locked</span></td></tr>`).join("");
+  const ab = $("#wallet-active-rows");
+  if (ab) ab.innerHTML = arows || `<tr data-empty><td colspan="5" class="muted">No active positions.</td></tr>`;
+  // history
+  const hrows = (w.history || []).map(h => `<tr>
+    <td class="num">${fmt.time(h.seen_ms || Date.now())}</td>
+    <td class="num">${fmt.time(h.resolved_ms || Date.now())}</td>
+    <td class="mono">${fmt.short(h.pool)}</td>
+    <td class="num">${eth2(h.front)}</td>
+    <td class="num">${eth2(h.mesp)}</td>
+    <td class="num ${(h.gain||0) >= 0 ? "good" : "bad"}">${(h.gain||0) >= 0 ? "+" : ""}${eth2(h.gain)}</td>
+    <td>${(h.gain||0) >= 0 ? "win (exp.)" : "loss (exp.)"}</td></tr>`).join("");
+  const hb = $("#wallet-hist-rows");
+  if (hb) hb.innerHTML = hrows || `<tr data-empty><td colspan="7" class="muted">Nothing resolved yet.</td></tr>`;
 }
 
 function wireStrict() {
