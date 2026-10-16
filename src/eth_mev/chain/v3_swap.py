@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..constants import SELECTOR_TO_KIND as _V2_SELECTORS  # noqa: F401 (kept for reference)
 from .v3_constants import V3_SELECTORS, V3_SWAP_EVENT_TOPIC, V3_ROUTERS
 
 EXACT_IN, EXACT_OUT = "in", "out"
