@@ -36,6 +36,15 @@ class V3Screener:
         self.n_blocks = self.n_swaps = self.n_strict = self.n_sandwiches = 0
         self.pool_cache: dict[str, dict] = {}
         self.pool_freq: dict[str, int] = {}
+        # Funnel counters for the strict-rate analysis (why are targets so rare?).
+        self.funnel = {
+            "decoded": 0,            # Swap events decoded from receipts
+            "with_pool_state": 0,    # had resolvable pool liquidity
+            "router_decoded": 0,     # direct router call decoded a guard (amount_in + amount_out_min)
+            "guardless": 0,          # direct router call but amountOutMinimum == 0 (no slippage guard)
+            "mesp_zero": 0,          # guard present but exposure mesp <= 0 (guard <= round-trip fee)
+            "mesp_positive": 0,      # strict (what we surface)
+        }
 
     async def settle_block(self, number: int) -> None:
         try:
@@ -100,6 +109,10 @@ class V3Screener:
         # active range; fine for the current-tick exposure).
         if not state.get("sqrt_price_x96"):
             return None
+        self.funnel["decoded"] += 1
+        if not state.get("liquidity"):
+            return None
+        self.funnel["with_pool_state"] += 1
         pool = V3Pool(
             sqrt_price_x96=state["sqrt_price_x96"], liquidity=state["liquidity"],
             tick=state["tick"], tick_spacing=state["tick_spacing"], fee_ppm=state["fee_ppm"],
@@ -110,10 +123,16 @@ class V3Screener:
         # exposure. When the tx is not a direct V3 router call (aggregator), we have no guard -> skip.
         if s.amount_in is None or s.amount_out_min is None:
             return None
+        self.funnel["router_decoded"] += 1
+        if s.amount_out_min == 0:
+            self.funnel["guardless"] += 1
+            return None
         victim = {"zero_for_one": s.direction > 0, "amount_in": s.amount_in, "limit": s.amount_out_min}
         e = exposure(pool, victim, capital=CAPITAL_WEI)
         if e.mesp <= 0 or e.front <= 0:
+            self.funnel["mesp_zero"] += 1
             return None
+        self.funnel["mesp_positive"] += 1
         self.pool_freq[s.pool] = self.pool_freq.get(s.pool, 0) + 1
         return {
             "tx_hash": s.tx_hash, "block": number, "pool": s.pool,
@@ -128,6 +147,7 @@ class V3Screener:
         self.hub.set_stats({
             "blocks": self.n_blocks, "swaps": self.n_swaps, "strict": self.n_strict,
             "sandwiches": self.n_sandwiches, "block": self.n_blocks,
+            "funnel": dict(self.funnel),
         })
 
     async def run(self, hours: float) -> None:
