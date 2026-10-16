@@ -62,3 +62,4 @@ class Hub:
 
     def set_wallet(self, state: dict) -> None:
         self.wallet = state
+        self.publish("wallet", state)
