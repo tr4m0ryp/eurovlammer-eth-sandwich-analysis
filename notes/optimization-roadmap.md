@@ -3,11 +3,26 @@
 Ordered by what moves the needle for the *sandwich-target* engine, outside the tunables already
 deployed (finetuned allocation + risk gates). Status reflects the 2026-10-15 codebase.
 
+> ⚠️ **Strategy re-frame (Oct 2026).** The front-run "sandwich-target" strategy this engine models is
+> **structurally closed to a retail operator**:
+> 1. Solana has **no public mempool** (Gulf Stream forwards txs straight to scheduled leaders), and
+>    Jito **shut down its public mempool stream in March 2024** to stop sandwich attacks.
+> 2. Jito's block engine runs active **sandwich mitigation** — a tx carrying a `jitodontfront*` account
+>    is rejected unless it is first in the bundle (our `dontfront` field). Front-running a protected
+>    victim is therefore refused at the block engine, not just hard.
+> 3. The remaining sandwich edge sits with **validator/relayer-level privileged access** (being
+>    penalised/removed) or extreme low-latency racing — not a retail bot.
+>
+> Net effect: **WIN_RATE ≈ 0 for us**, so the dry-run's assumed 0.5 is optimistic and "go live" as a
+> front-runner has no durable edge. The screener is the correct shape for *analysis + simulation*; a
+> real P&L strategy would be a different product (atomic arbitrage / back-running via Jito bundles),
+> out of scope here.
+
 | # | Bottleneck | Effect | Fix | Effort | Status / cost |
 |---|---|---|---|---|---|
-| 1 | No mempool | WIN_RATE (the real edge) | Geyser/Jito stream + same-block send | high | stream is paid; Jito send is free |
-| 2 | Dry-run only | realise the edge | live=True + Jito bundle + settle loop | medium | needs funded keypair + auth keypair |
-| 3 | Region | WIN_RATE (few ms) | EU colo | ops | negligible Amsterdam↔Frankfurt (~5–7 ms) |
+| 1 | No mempool | WIN_RATE — but see re-frame | Geyser gRPC (observe) is the only real upgrade; front-run edge does not exist publicly | high | gRPC paid; Jito send free |
+| 2 | Dry-run only | realise the edge | live=True + Jito bundle + settle loop | medium | **no edge without a real strategy — defer** |
+| 3 | Region | WIN_RATE (few ms) | EU colo | ops | Amsterdam **and** Frankfurt are both official Jito Block-Engine regions (~5–7 ms apart) |
 | 4 | Capital | visible/budget-feasible count | raise cap | — | **deferred — needs funds** |
 | 5 | Single-buy vs bursts | sandwichable count | flow-burst aggregation | medium | **not implemented yet** |
 | 6 | Optimistic sim | display only | settle vs real sandwiches | medium | already done (wallet vs `victims`) |
