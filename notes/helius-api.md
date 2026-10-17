@@ -184,3 +184,52 @@ Credits/Usage page is the only place that says what.
 **The one thing to confirm in the dashboard:** open `dashboard.helius.dev` → Credits/Usage and
 read which method consumed this month's allowance, because that single number decides whether the
 fix is a $49 plan bump or a change to what the code calls.
+
+## Cheaper and free alternatives
+
+**The polling we already run is the free option.** `default_pool()` uses
+`https://solana-rpc.publicnode.com`, which is free and needs no account, plus Alchemy's free tier
+from `ALCHEMY_RPC_URL`. Nothing about `getBlock` polling requires Helius, which is why the Helius
+ceiling did not stop the screener.
+
+Free RPC worth knowing, with the caveat that most published limits come from vendor comparison
+pages rather than the vendors themselves:
+
+| Endpoint | Cost | Limit | Note |
+|---|---|---|---|
+| `solana-rpc.publicnode.com` | free, no account | ~200 req/s per IP (third-party figure) | what we already use |
+| `api.mainnet-beta.solana.com` | free | 100 req/10 s per IP, 40 per method | Solana's own docs say not for production ([clusters](https://solana.com/docs/references/clusters)); the repo already notes it 429s every `getBlock` |
+| Chainstack Developer | $0 | 3M RU/mo, 25 RPS | no archive, no gRPC ([pricing](https://chainstack.com/pricing/)) |
+| Ankr free | $0 | ~30 req/s (third-party figure) | no Yellowstone gRPC at any tier |
+| Helius Free | $0 | 1M credits, 10 req/s | what we are sitting on, and it is spent ([plans](https://www.helius.dev/docs/billing/plans.md)) |
+
+**There is no free mainnet gRPC anywhere.** Every provider checked puts Yellowstone/Geyser behind
+a paid tier. Cheapest paths, in order:
+
+| Provider | Entry cost for mainnet gRPC | Shape |
+|---|---|---|
+| **Chainstack** | **$49/mo Growth + $49/mo add-on = $98/mo** | add-on gives 2 concurrent streams; 7 streams at $149 ([add-on](https://chainstack.com/yellowstone-grpc-more-streams-same-price/), [pricing](https://chainstack.com/pricing/)) |
+| Shyft | $199/mo (Build) | gRPC included, unlimited credits, 100 RPC req/s ([pricing](https://shyft.to/solana-rpc-grpc-pricing)) |
+| QuickNode | $499/mo (Scale) | gRPC included, metered at 10 credits per 0.1 MB ([blog](https://www.quicknode.com/blog/solana-grpc-is-now-included-with-scale-and-business-plans)) |
+| Helius | $499/mo (Business) | LaserStream, 2 credits per 0.1 MB, plus replay and cuckoo filters ([plans](https://www.helius.dev/docs/billing/plans.md)) |
+| Alchemy | pay as you go, from $75/TB streamed | not on the free plan |
+
+**Chainstack at $98/mo is the cheapest way to reach mainnet gRPC**, five times cheaper than
+Helius Business, and it is plain Yellowstone, which our client would speak unchanged. What it does
+not buy is Helius's 48-hour replay or the compressed-account filters
+([LaserStream](https://www.helius.dev/docs/laserstream)); losing replay matters for a screener that
+must not have holes after a disconnect, so budget for our own gap-filling by `getBlock` against the
+free endpoints.
+
+**Note the billing asymmetry.** QuickNode meters gRPC at 10 credits per 0.1 MB against Helius's 2,
+so compare per-MB rates and not sticker price if the subscription is wide.
+
+**Free is not available for pre-confirmation at all.** Shred and preconfirmation feeds are
+$800-1,000/mo per IP or Professional-tier at Helius, and Jito's ShredStream, the one historically
+free-ish route, is deprecated with a 2026-09-05 shutdown
+([Jito docs](https://docs.jito.wtf/lowlatencytxnfeed/)).
+
+**Revised recommendation.** Do nothing paid yet. Keep polling on publicnode plus Alchemy, which
+costs nothing and is what is already running, and treat Helius as a dead fallback until the
+dashboard says what spent the month. If the latency case for streaming is then made, start at
+Chainstack $98/mo with a tight program filter rather than Helius $499/mo.
