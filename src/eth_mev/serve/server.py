@@ -43,7 +43,7 @@ LOGIN_HTML = """<!doctype html>
 </head>
 <body>
 <form method="post" action="/login">
- <h1>V3 Sandwich Targets</h1>
+ <h1>Atomic Arbitrage</h1>
  <p>This dashboard is locked. Enter the passcode to continue.</p>
  <input type="password" name="code" placeholder="Passcode" autofocus autocomplete="current-password">
  <button type="submit">Unlock</button>
