@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>V3 Sandwich Targets</title>
+<title>Atomic Arbitrage</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
@@ -15,58 +15,35 @@
 <div class="app">
   <header class="topbar">
     <div class="row">
-      <h1 class="name">V3 Sandwich Targets</h1>
+      <h1 class="name">Atomic Arbitrage</h1>
       <span class="live" id="live"><i></i><span id="live-t">loading</span></span>
     </div>
     <nav class="tabs" id="tabs" role="tablist">
-      <button class="tab" role="tab" aria-selected="true" data-tab="strict">Strict Targets</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="wallet">Wallet</button>
+      <button class="tab" role="tab" aria-selected="true" data-tab="arb">Arbitrage</button>
     </nav>
   </header>
   <main id="main"><div class="stack">
-    <section class="stack" data-panel="strict">
-      <section class="stats" id="strict-live-stats"></section>
+    <section class="stack" data-panel="arb">
+      <section class="stats" id="arb-stats"></section>
       <div class="card">
-        <div class="card-h"><h2 class="card-t">Concentrated-Liquidity Screener</h2><small>Uniswap V3: front-run size capped at the wallet budget. MESP computed over the pool's tick bitmap.</small></div>
-        <div class="verdict">Each row is a V3 victim swap we could sandwich: front-run &middot; victim &middot; back-run, net of two pool fees. MESP &gt; 0 means the victim's slippage room exceeds the round-trip fee.</div>
+        <div class="card-h"><h2 class="card-t">Flash-loan cross-pool arb</h2><small>one tx: borrow WETH → buy cheap → sell expensive → repay. Tradeability filter: ≥50 WETH depth + fresh V2 pairs.</small></div>
+        <div class="verdict">Each row is a price dislocation between two WETH-paired markets (V2/V3/fee tier). Net = profit − gas − bribe. Balancer flash loan (0% fee).</div>
       </div>
       <div class="toolbar">
-        <div class="fld"><span>Show</span><div class="seg" data-sl="view">
-          <button aria-pressed="true" data-v="">All</button><button data-v="high_roi">MESP &ge; 0.02 ETH</button><button data-v="frequent">Frequent pool</button></div></div>
-        <small id="strict-live-n">Waiting for V3 targets</small>
+        <small id="arb-live-n">Waiting for dislocations</small>
       </div>
       <div class="tbl-wrap tbl-scroll"><table>
         <thead><tr>
-          <th>Time</th><th class="num">Block</th><th class="num">Fee tier</th><th>Pool</th>
-          <th class="num">Price</th><th class="num">Victim in (ETH)</th><th class="num">Guard</th>
-          <th class="num">MESP (ETH)</th><th class="num">Front (ETH)</th><th class="num">ROI</th>
-          <th class="num">Freq</th><th class="num">Slack</th><th>Dir</th><th>Tx</th>
+          <th>Time</th><th>Token</th><th>Buy venue</th><th class="num">Buy price</th>
+          <th>Sell venue</th><th class="num">Sell price</th><th class="num">Spread</th>
+          <th class="num">Borrow (WETH)</th><th class="num">Profit (WETH)</th><th class="num">Net (WETH)</th>
         </tr></thead>
-        <tbody id="strict-live-rows"></tbody>
-      </table></div>
-    </section>
-    <section class="stack" data-panel="wallet" hidden>
-      <section class="stats" id="wallet-stats"></section>
-      <div class="card">
-        <div class="card-h"><h2 class="card-t">Capital Allocation</h2><small>simulated wallet &middot; dry-run only (no funded key).</small></div>
-        <div class="verdict">Each strict target is scored against the allocation rule; a commit locks its &kappa;, then resolves against the live sandwich feed (win / reverted_or_outbid / no_sandwich).</div>
-      </div>
-      <div class="tbl-wrap tbl-scroll"><table>
-        <thead><tr>
-          <th>Time committed</th><th>Pool</th><th class="num">&kappa; (front)</th><th class="num">&pi; (expected)</th><th>Status</th>
-        </tr></thead>
-        <tbody id="wallet-active-rows"></tbody>
-      </table></div>
-      <div class="tbl-wrap tbl-scroll"><table>
-        <thead><tr>
-          <th>Committed</th><th>Resolved</th><th>Pool</th><th class="num">&kappa; (front)</th><th class="num">&pi; (mesp)</th><th class="num">Gain (ETH)</th><th>Status</th>
-        </tr></thead>
-        <tbody id="wallet-hist-rows"></tbody>
+        <tbody id="arb-rows"></tbody>
       </table></div>
     </section>
   </div></main>
 </div>
 <script src="static/lib/fmt.js"></script>
-<script src="static/live/v3.js"></script>
+<script src="static/live/arb.js"></script>
 </body>
 </html>
