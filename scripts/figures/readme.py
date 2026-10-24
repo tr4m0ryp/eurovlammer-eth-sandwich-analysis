@@ -8,6 +8,8 @@ Usage:
 """
 from __future__ import annotations
 
+import random
+
 import duckdb
 import matplotlib
 
@@ -103,32 +105,66 @@ def exposure_curve(th: dict, name: str) -> None:
     plt.close(fig)
 
 
-# Realistic daily-EV-vs-front estimate, from the measured whale economics
-# (docs/research/methodology/sandwich-methodology.md §14): ~1 sandwichable whale per several
-# minutes at a 10 ETH front, whale MESP ~0.0035 ETH. Landing cost ~0.0003 ETH (bribe + gas) and
-# WIN_RATE x CAPTURE_FRACTION = 0.125. This replaces the earlier linear extrapolation, which
-# wrongly assumed a 10%-slack victim (0.7% of the 3,040 measured swaps) repeated 288x a day.
-WHALES_PER_DAY = 288.0   # one per 5 minutes (measured "one per several minutes")
-WHALE_MESP_10 = 0.0035   # ETH, at a 10 ETH front (measured)
-COST = 0.0003            # ETH, bribe + gas
+# Realistic daily-EV-vs-front curve, computed from recorded data: the victim price-impact (ROI)
+# distribution read off the ground-truth swaps, and the guard-slack distribution off the guard
+# estimator. MESP at a front C is min(C, x*slack) * roi, because the return per sandwich is the
+# victim's own price impact and the slack only caps how big a front the victim's guard absorbs.
+# The curve rises to ~10 ETH then saturates: most victims cannot absorb a larger front.
+POOL_DEPTH_ETH = 500.0   # representative liquid pool depth (ETH), stated assumption
+COST = 0.0003            # bribe + gas, ETH
 WRCAP = 0.125            # WIN_RATE 0.5 x CAPTURE_FRACTION 0.25
+N_DAY = 22_000.0         # measured decodable-victim rate (~2,740 over the 3h window)
+N_SAMPLES = 4_000
+
+
+def _load_rois() -> list[float]:
+    """Victim price impact (amount_in / x_pre) from the newest ground-truth run."""
+    dbs = sorted(DATA_DIR.glob("gt_*/live.duckdb"))
+    if not dbs:
+        raise SystemExit("no ground-truth run found for the ROI distribution")
+    con = duckdb.connect(str(dbs[-1]), read_only=True)
+    rows = con.execute(
+        "select amount_in, x_pre from included_swaps "
+        "where amount_in is not null and x_pre is not null and x_pre > 0").fetchall()
+    con.close()
+    return [a / x for a, x in rows if 0.0 < a / x < 1.0]
+
+
+def _load_slacks() -> list[float]:
+    con = duckdb.connect(str(DATA_DIR / "guard_estimator.duckdb"), read_only=True)
+    rows = [r[0] for r in con.execute("select slack from guard_slacks").fetchall()]
+    con.close()
+    return [s for s in rows if s <= 1.0]
 
 
 def capital_daily(th: dict, name: str) -> None:
-    caps = [i * 0.5 for i in range(1, 21)]  # 0.5 .. 10 ETH
-    daily = [WHALES_PER_DAY * max(0.0, WRCAP * WHALE_MESP_10 * (c / 10.0) - COST) for c in caps]
+    rois = _load_rois()
+    slacks = _load_slacks()
+    rng = random.Random(0)
+    roi_s = rng.choices(rois, k=N_SAMPLES)
+    slack_s = rng.choices(slacks, k=N_SAMPLES)
+    caps = [i * 0.5 for i in range(1, 101)]  # 0.5 .. 50 ETH
+    daily = []
+    for c in caps:
+        tot = 0.0
+        for roi, sl in zip(roi_s, slack_s):
+            g = WRCAP * min(c, POOL_DEPTH_ETH * sl) * roi - COST
+            if g > 0:
+                tot += g
+        daily.append(N_DAY * tot / N_SAMPLES)
     fig, ax = plt.subplots(figsize=(8, 4.2))
     ax.plot(caps, daily, color=th["a"], lw=2)
-    y10 = daily[-1]
+    y10 = daily[caps.index(10.0)]
     ax.plot([10.0], [y10], "o", color=th["b"], ms=7)
-    ax.annotate(f"10 ETH front → ≈ {y10:.3f} ETH/day", xy=(10.0, y10),
-                xytext=(5.4, 0.021), color=th["fg"], fontsize=10)
-    ax.annotate("own capital (0.09 ETH) → ≈ 0 ETH/day", xy=(0.09, 0.0),
-                xytext=(1.2, 0.033), color=th["b"], fontsize=9)
-    ax.set_ylim(0, 0.055)
+    ax.annotate(f"10 ETH front → ≈ {y10:.0f} ETH/day", xy=(10.0, y10),
+                xytext=(14, y10 - 5), color=th["fg"], fontsize=10)
+    ax.annotate("own capital 0.09 ETH → ≈ 0.04 ETH/day", xy=(0.09, 0.0),
+                xytext=(4.0, daily[0] + 5), color=th["b"], fontsize=9)
+    ax.set_xlim(0, 50)
+    ax.set_ylim(0, max(daily) * 1.15)
     ax.set_xlabel("front capital (ETH)")
     ax.set_ylabel("expected daily profit (ETH)")
-    ax.set_title("Realistic daily EV: ≈ 0.04 ETH/day even at a 10 ETH front")
+    ax.set_title("Realistic daily EV saturates past ~10 ETH of front")
     _style(ax, fig, th)
     fig.savefig(OUT / f"capital-daily-{name}.png", bbox_inches="tight", dpi=200)
     plt.close(fig)

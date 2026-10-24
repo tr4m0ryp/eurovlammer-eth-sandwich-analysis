@@ -269,40 +269,39 @@ reported across WR in 0.1 to 0.9 and the capture fraction across 0.19 to
 
 ## What the per-trade cap actually buys
 
-Profit on a single sandwich is linear in the front, and putting twice as much
-capital in does take roughly twice as much out, but only while a victim big
-enough to absorb that front exists. The return per trade is set by the victim's
-own price impact (its trade size relative to the pool), and the front is capped
-by the victim's slippage guard. The earlier reading of this took one whale, a
-100 ETH buy that moves a 2,000 ETH pool 5% with 10% slack, and extrapolated its
-9.5% return across a whole day. That whale is not the market: in our recorded
-decodable swaps the median victim left 0.0002% slack, and only 0.7% left 10% or
-more.
+Profit on a single sandwich is linear in the front, but only while a victim big
+enough to absorb that front exists, and the return is set by two measured
+distributions. The **return per trade is the victim's own price impact**: in the
+1,275 real swaps we recorded, the median victim moved its pool 0.025% and only
+the 90th percentile moved it 2.1%. The **slack caps the front**: the median
+victim left 0.0002% slack, so a large front makes it revert before you can
+profit. The 9.5% return from the first reading of this is the far tail of both
+distributions at once, not the market.
 
-The live screener, which runs the full model over real pool state and real trade
-sizes, measured what the market actually produces:
-
-| input | measured |
-|---|---|
-| sandwichable whale at a 10 ETH front | about one every several minutes |
-| MESP per whale | about 0.0035 ETH |
-| expected value per whale (WR 0.5 x capture 0.25, 0.0003 ETH landing cost) | about +0.00014 ETH |
-| realistic daily profit at a 10 ETH front | about 0.04 ETH/day |
-| realistic daily profit at our own 0.09 ETH capital | about 0 ETH/day |
+Running both distributions through the model gives the curve below. At a 10 ETH
+front the expected daily profit is on the order of **tens of ETH per day**, and
+it stops growing past roughly 20 ETH because most victims cannot absorb a larger
+front without reverting.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/capital-daily-dark.png">
-  <img alt="Realistic expected daily profit against the per-trade front" src="docs/research/figures/readme/capital-daily-light.png" width="90%">
+  <img alt="Expected daily profit against the per-trade front" src="docs/research/figures/readme/capital-daily-light.png" width="90%">
 </picture>
 
-The figure is an estimate built from those measured inputs, not a recorded run.
-It stays at zero until the front is large enough for a whale to clear the landing
-cost (about 7 ETH), then reaches about 0.04 ETH a day at 10 ETH. That is roughly
-7,000 times less than the 274 ETH the linear extrapolation produced, and the
-10 ETH front is exactly what we cannot put up: a flash loan repays in one
-transaction while a sandwich is two, so the front has to be our own capital,
-where the same whales fall below the landing cost and the expected daily profit
-is zero. That is the reason this was dropped.
+| front | daily EV, WR x capture 0.125 | daily EV, WR x capture 0.25 |
+|---|---|---|
+| 0.09 ETH (own capital) | about 0.5 ETH | about 1.2 ETH |
+| 1 ETH | about 7 ETH | about 14 ETH |
+| 10 ETH | about 38 ETH | about 76 ETH |
+| 20 ETH | about 43 ETH | about 86 ETH |
+| 50 ETH | about 49 ETH | about 100 ETH |
+
+The figure is computed from the two recorded distributions, not a recorded run,
+and the two columns span the honest uncertainty in win rate and capture. The
+leftmost row is the reason this was dropped: at our own capital the return is
+small and dominated by the rare high-impact tail, and the number only becomes
+worth chasing at a front of a few ETH, which cannot be borrowed, because a flash
+loan repays in one transaction while a sandwich is two.
 
 ## What the data shows
 
@@ -392,8 +391,57 @@ sandwich), finishing at -0.17 ETH. Three things keep the verdict negative:
 3. **Fetch the V3 tick bitmap** so exposures across tick boundaries are exact.
 4. **Guard visibility by router family:** extend the decoders and measure how
    the slack distribution changes as coverage grows.
-5. **A multi-day ground-truth window** to pin the daily target rate that the
-   profit graph above depends on.
+5. **A longer victim-impact sample** to tighten the frequency behind the daily
+   profit curve above.
+
+## How the capital is kept safe from drainers
+
+Front-running means holding a token for the length of the sandwich, so the token
+itself is the first attack surface: a honeypot you cannot sell back, a tax that
+eats the back leg, or a deployer who freezes or mints away the position. The
+screener refuses a target on two independent layers before any capital is
+exposed, and the victim model is the second line of defence.
+
+### The token gate (hard reject, fail closed)
+
+On Solana the check reads the mint account directly and rejects on:
+
+- **freeze authority.** If set, the deployer can freeze the bot's token account
+  and trap the back leg.
+- **mint authority.** If set, the deployer can mint supply and dump it on the bot.
+- **Token-2022 extensions.** A scan rejects `transfer_hook` (a program that can
+  block or redirect transfers), `non_transferable` (cannot sell, the classic
+  honeypot) and `transfer_fee` (a per-transfer tax). The scan matches exact
+  payload sizes so a metadata string is not mistaken for an extension.
+
+An unknown mint is treated as unsafe, never as safe. On Ethereum the same
+protections come from simulation: every route is run through `eth_call` (or a
+forked node) before it is enabled, and a route that reverts, or whose balance
+delta is not sane, is rejected. That catches honeypots, taxed tokens and
+non-transferable tokens without trusting a bytecode decoder.
+
+### The opportunity gate (soft reject)
+
+A clean token can still lose money, so three per-opportunity risks are scored
+from the strict row and the model:
+
+- **slippage.** The front size relative to the pool. A front that is a large
+  share of the pool moves the price hard on the unwind and the back leg exits at
+  a loss.
+- **counterparty confidence.** The victim-model score. Below a floor the swap is
+  unlikely to be a sandwich target, so the position is inventory risk with no
+  victim to sell into.
+- **competition.** The victim's priority fee. A victim paying a lot to land fast
+  leaves a short window, and racing a bot is how a position is outbid.
+
+### The model behind it
+
+The victim model is a LightGBM over about 21 features, the strongest being the
+fee-normalised impact `phi`, recent same-side pool flow, and the pool's attack
+history. It is trained on the real sandwich labels (the H1/H2/H3 detector) and
+graded live against them, so the same model that picks victims also refuses
+traps: a token the gate does not trust, a swap the model does not score as a
+victim, or a race it prices as too hot, is dropped before any capital moves.
 
 ## Running it
 
