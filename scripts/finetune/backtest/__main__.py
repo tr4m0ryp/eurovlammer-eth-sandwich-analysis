@@ -1,8 +1,8 @@
 """Replay backtest CLI.
 
 Usage:
-    .venv/bin/python -m scripts.finetune.backtest --cache --db data/live_.../live.duckdb
-    .venv/bin/python -m scripts.finetune.backtest --vector '{"MIN_P":0.1}' --db ...
+    python3 . backtest --cache --db data/live_.../live.duckdb
+    python3 . backtest --vector '{"MIN_P":0.1}' --db ...
 """
 from __future__ import annotations
 

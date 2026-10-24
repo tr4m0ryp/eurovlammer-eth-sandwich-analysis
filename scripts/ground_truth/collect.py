@@ -7,7 +7,7 @@ persists to ``data/live_*/live.duckdb`` (``included_swaps`` + ``sandwiches`` + `
 
 Usage:
     ETH_WS_URL=wss://eth.drpc.org ETH_RPC_URL=https://eth.drpc.org \
-      .venv/bin/python -m scripts.ground_truth.collect --hours 3
+      python3 . collect --hours 3
 """
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ import asyncio
 import time
 from pathlib import Path
 
-from eth_mev.chain.v2.swaps import decode_swap_logs, decode_v2_router
-from eth_mev.chain.v2.constants import ROUTERS as _ROUTERS
-from eth_mev.chain.tx import normalized_tx
-from eth_mev.ingest.rpc import Rpc, Subscriber
-from eth_mev.metrics.sandwich import Sandwich, find_sandwiches, top_heavy
-from eth_mev.paths import DATA_DIR
-from eth_mev.store.writer import Store
+from eth_mev.onchain.decode.v2.swaps import decode_swap_logs, decode_v2_router
+from eth_mev.onchain.decode.v2.constants import ROUTERS as _ROUTERS
+from eth_mev.onchain.decode.tx import normalized_tx
+from eth_mev.onchain.node import Rpc, Subscriber
+from eth_mev.measure.detection.sandwich import Sandwich, find_sandwiches, top_heavy
+from eth_mev.config import DATA_DIR
+from eth_mev.app.store import Store
 
 
 
@@ -179,7 +179,7 @@ async def main() -> None:
     ap.add_argument("--max-blocks", type=int, default=None)
     ap.add_argument("--run-dir", type=str, default=None)
     a = ap.parse_args()
-    from eth_mev.ingest.rpc import rpc_url, ws_url
+    from eth_mev.onchain.node import rpc_url, ws_url
     url = rpc_url()
     ws = ws_url() or url.replace("https://", "wss://").replace("http://", "ws://")
     run_dir = Path(a.run_dir) if a.run_dir else DATA_DIR / time.strftime("gt_%Y%m%d_%H%M%S")

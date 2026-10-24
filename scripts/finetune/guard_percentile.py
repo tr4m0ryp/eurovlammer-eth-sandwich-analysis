@@ -7,7 +7,7 @@ for undecodable swaps. Lower percentiles = conservative (few false over-estimate
 higher = tail-hunting (catch high-room victims, risk reverting the low-room majority).
 
 Usage:
-    .venv/bin/python -m scripts.finetune.guard_percentile [--db data/guard_estimator.duckdb]
+    python3 . guard [--db data/guard_estimator.duckdb]
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from eth_mev.paths import DATA_DIR
+from eth_mev.config import DATA_DIR
 
 DEFAULT_DB = DATA_DIR / "guard_estimator.duckdb"
 
