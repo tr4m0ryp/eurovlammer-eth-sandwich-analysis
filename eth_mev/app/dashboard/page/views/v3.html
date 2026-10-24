@@ -58,11 +58,11 @@
       <section class="stats" id="wallet-stats"></section>
       <div class="card">
         <div class="card-h"><h2 class="card-t">Capital Allocation</h2><small>counterfactual wallet &middot; dry-run only, nothing is sent.</small></div>
-        <div class="verdict">Each strict target is scored against the allocation rule; a commit locks its &kappa;, then resolves against the live sandwich feed (win / reverted_or_outbid / no_sandwich).</div>
+        <div class="verdict">A strict target is committed when its MESP clears the landing cost (gas + bribe + flash-loan fee) divided by win rate &times; capture share. Each position resolves 3 blocks later at its expected value, win rate &times; capture &times; MESP &minus; cost; the V3 view has no sandwich ground-truth feed.</div>
       </div>
       <div class="tbl-wrap tbl-scroll"><table>
         <thead><tr>
-          <th>Time committed</th><th>Pool</th><th class="num">&kappa; (front)</th><th class="num">&pi; (expected)</th><th>Status</th>
+          <th>Time committed</th><th>Pool</th><th class="num">&kappa; (front)</th><th class="num">expected net</th><th>Status</th>
         </tr></thead>
         <tbody id="wallet-active-rows"></tbody>
       </table></div>

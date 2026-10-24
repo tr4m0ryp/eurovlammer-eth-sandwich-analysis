@@ -1,5 +1,9 @@
 # trenches-eth: Ethereum Sandwich-Exposure Analysis
 
+<a href="docs/research/figures/readme/platform.mp4"><img src="docs/research/figures/readme/platform-preview.gif" width="100%" alt="A one-minute walkthrough of the live dry-run dashboards: V3 exposure targets, the visibility funnel and the arbitrage scanner"></a>
+
+<sub>Recorded live on Ethereum mainnet, 2026-10-24, 20:19 to 20:25 UTC (blocks 26,264,750 to 26,264,890). Real decoded swaps, nothing mocked and nothing sent. Click for the MP4.</sub>
+
 ## Why this exists
 
 This repository was built for my thesis on the analysis of crypto-market
