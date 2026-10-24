@@ -9,11 +9,12 @@ guard from ``tlive/ingest/follow.py``).
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, AsyncIterator, Callable
 
-from ..chain.constants import ROUTERS as _ROUTERS
-from ..chain.constants import WETH
-from ..chain.swaps.model import decode_v2_router
+from ..chain.v2.constants import ROUTERS as _ROUTERS
+from ..chain.v2.constants import WETH
+from ..chain.v2.swaps import decode_v2_router
 from ..chain.tx import normalized_tx
 from .rpc import Rpc, Subscriber
 
