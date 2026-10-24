@@ -1,11 +1,11 @@
 """Markdown rendering of the finetune report, including the go/no-go recommendation."""
 from __future__ import annotations
 
-from eth_mev.paths import ROOT
+from eth_mev.config import ROOT
 
 from .. import sweep
 
-REPORT = ROOT / "notes" / "reports" / "finetune-report.md"
+REPORT = ROOT / "docs" / "research" / "findings" / "finetune-report.md"
 
 
 def fmt_vec(b: dict) -> dict:

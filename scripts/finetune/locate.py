@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from eth_mev.paths import DATA_DIR
+from eth_mev.config import DATA_DIR
 
 OUT = DATA_DIR / "exports" / "finetune"
 

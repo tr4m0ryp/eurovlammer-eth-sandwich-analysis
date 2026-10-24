@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import statistics
 
-from eth_mev.engine.allocation.v2 import WEI, Allocator
+from eth_mev.strategy.allocation.v2 import WEI, Allocator
 
 
 RISK_DEFAULTS = {"MAX_SLIPPAGE_FRAC": 0.05, "MIN_COUNTERPARTY_P": 0.02, "MAX_PRIORITY_FEE_WEI": 50_000_000_000}
