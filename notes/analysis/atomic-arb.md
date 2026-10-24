@@ -11,11 +11,11 @@ one tx:  flashBorrow(10 ETH) → buy token on pool A (cheap) → sell token on p
 
 | File | Role |
 |---|---|
-| `metrics/arb.py` | `two_leg_profit` + `optimal_arb` — the borrow→buy→sell profit and the golden-section optimal borrow size, reusing `v3_math.exact_input`. |
-| `exec/flash_loan.py` | Balancer V2 (`0xBA1222…`, 0% fee) + Aave V3 (`0x87870B…`, 0.05%) calldata encoding; selectors verified via `web3.keccak`. |
+| `metrics/arb.py` | `two_leg_profit` + `optimal_arb` — the borrow→buy→sell profit and the golden-section optimal borrow size, reusing `metrics/v3/tick_math.exact_input`. |
+| `exec/arb/flash_loan.py` | Balancer V2 (`0xBA1222…`, 0% fee) + Aave V3 (`0x87870B…`, 0.05%) calldata encoding; selectors verified via `web3.keccak`. |
 | `contracts/ArbExecutor.sol` | The flash-loan callback contract (borrow → 2 swap legs → repay, with a `NoProfit` revert so an `eth_call` reports the cycle output). Reference source; not deployed. |
-| `exec/arb_build.py` | Encodes `executeArbBalancer`/`executeArbAave` with `abi.encode(tokenOut, minProfit, buyLeg, sellLeg)`. |
-| `run_arb.py` | Dry-run screener: stream blocks, batch-read seed pool states, detect dislocations, serve them. Sends nothing. |
+| `exec/arb/build.py` | Encodes `executeArbBalancer`/`executeArbAave` with `abi.encode(tokenOut, minProfit, buyLeg, sellLeg)`. |
+| `python -m eth_mev.apps.arb_scanner` | Dry-run screener: stream blocks, batch-read seed pool states, detect dislocations, serve them. Sends nothing. |
 
 ## EV math
 
@@ -31,11 +31,11 @@ liquidity and the loan cap (`MEV_FLASH_LOAN_ETH`, default 10).
 
 ## Status / go
 
-- `metrics/arb.py` + `exec/flash_loan.py` + `exec/arb_build.py` are **tested** (9 new unit tests,
+- `metrics/arb.py` + `exec/arb/flash_loan.py` + `exec/arb/build.py` are **tested** (9 new unit tests,
   99 total green).
 - The **Solidity executor is a reference sketch** — not compiled (no solc here) and **not deployed**.
   Deploying it to mainnet is a go-live-gated, paid step (confirm first).
-- `run_arb.py` is a **dry-run**; the live send (executor calldata → `FlashbotsRelay.send_bundle`) is
+- `python -m eth_mev.apps.arb_scanner` is a **dry-run**; the live send (executor calldata → `FlashbotsRelay.send_bundle`) is
   wired but disabled behind `LIVE=1` + funded keys + sign-off.
 
 **Go/no-go**: do not deploy the executor or send until (a) the detector is validated against a fork,
