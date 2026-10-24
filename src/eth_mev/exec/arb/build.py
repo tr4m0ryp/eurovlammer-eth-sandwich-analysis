@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from eth_abi import encode
 
-from .flash_loan import (BALANCER_VAULT, BALANCER_FLASH_LOAN_SEL, AAVE_V3_POOL,
-                         AAVE_FLASH_LOAN_SIMPLE_SEL)
 
 # The Leg struct layout must match ArbExecutor.sol exactly.
 LEG_TYPES = ["address", "address", "address", "uint256", "uint160", "bool"]
