@@ -4,22 +4,44 @@
 
 <sub>Recorded live on Ethereum mainnet, 2026-10-24: the screeners ran 19:57 to 20:25 UTC (blocks 26,264,750 to 26,264,890) and the figures on the cards come from that run. Real decoded swaps, nothing mocked and nothing sent. Click for the MP4.</sub>
 
-## Why this exists
+> **Dropped.** The profitable numbers below need a large front, and that front
+> cannot be borrowed: a flash loan repays atomically in a single transaction,
+> while a sandwich is two transactions. That leaves only our own capital, which
+> was too low to produce a reliable daily return.
 
-This repository was built for my thesis on the analysis of crypto-market
-activity. **It is a research instrument, not a trading system.** It watches
-Ethereum, measures how exposed ordinary DEX traders are to sandwich attacks,
-labels the attacks that actually happened, and replays the opportunities
-through a counterfactual model to ask one question: could anyone outside the
-private order-flow pipes even see this, let alone profit from it?
+## What this actually was
 
-Every command runs as a **dry-run that signs and sends nothing**. The
-execution code that prices gas, fees and builder bribes is kept only so the
-cost model uses real calldata and bundle shapes; it is switched off behind
-hard gates and has never been configured. Sandwich attacks harm the traders
-they target. Nothing here is a recommendation to run one.
+This project started as an attempt to build a **high-frequency trading strategy**,
+not a research paper. The idea was simple: watch for a large swap before it
+lands, jump in front of it, and sell straight back out at the price the victim's
+own trade just moved. We were trying to build something that made money, and we
+called it that.
 
-The short answer the data gives: **from the public mempool, mostly no.**
+The idea did **not** work on Solana, and not for lack of trying. Solana has no
+public mempool (transactions are forwarded straight to the upcoming leader), and
+Jito shut its mempool stream down in March 2024 specifically to stop these
+attacks. A way around it still exists, paid Geyser/gRPC and preconfirmation
+streams, and we researched it in detail, but the cost of that data was far too
+high for what it would buy. So we moved to Ethereum, which has a public mempool,
+and built this repository as the successor to
+[`tr4m0ryp/trenches-live`](https://github.com/tr4m0ryp/trenches-live).
+
+On Ethereum the mechanism **works**, which is the reason the project lives here.
+The front-run model produces positive, fee-net profit on loose-guard victims, and
+that profit scales with the capital you commit to each trade. The
+[capital section](#profit-scales-linearly-with-the-per-trade-cap) below shows the
+numbers. What stopped us from turning it into a live bot was a combination of the
+honest caveats measured throughout this document, the cost of landing first and
+the trades hidden in private order flow, and, more importantly, the conclusion
+that what we were building is **sandwiching**: it extracts value from ordinary
+traders, it is not clearly legal, and it is not something we want to run or
+recommend.
+
+Every command here still runs as a **dry-run that signs and sends nothing**. The
+execution code that prices gas, fees and builder bribes is kept only so the cost
+model uses real calldata and bundle shapes; it is switched off behind hard gates
+and has never been configured. Sandwich attacks harm the traders they target.
+Nothing here is a recommendation to run one.
 
 ## The idea
 
@@ -246,6 +268,43 @@ last 20%. The win rate WR cannot be measured offline, so every result is
 reported across WR in 0.1 to 0.9 and the capture fraction across 0.19 to
 0.60, each averaged over 20 Monte-Carlo seeds.
 
+## Profit scales linearly with the per-trade cap
+
+The reason the move to Ethereum made sense at all is that the profit scales
+**linearly with how much you are allowed to commit to each trade**, up to the
+point where the victim's own slippage guard binds. On a representative victim, a
+100 ETH buy with 10% guard slack on a 2,000 ETH, 30 bps pool, the model returns a
+roughly constant 9.5% on the front regardless of its size:
+
+| capital per trade | profit per trade | return |
+|---|---|---|
+| 0.045 ETH | 0.0043 ETH | 9.6% |
+| 0.09 ETH | 0.0086 ETH | 9.6% |
+| 0.18 ETH | 0.0173 ETH | 9.6% |
+| 1 ETH | 0.0958 ETH | 9.6% |
+| 10 ETH | 0.951 ETH | 9.5% |
+
+A 10 ETH cap is not ten times a small number that stays small; it is ten times
+the same percentage, and that compounds the daily total:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/capital-daily-dark.png">
+  <img alt="Expected daily profit against the per-trade capital cap" src="docs/research/figures/readme/capital-daily-light.png" width="90%">
+</picture>
+
+The figure is a **model illustration**, not a recorded run: it multiplies the
+per-trade profit above by an assumed 288 sandwichable targets per day (the
+measured whale rate is "one per several minutes"). At 10 ETH the line reads
+about **0.95 ETH per trade, or roughly 274 ETH per day**. The linearity holds
+only until the front reaches the victim's own feasibility boundary (about 100 ETH
+for this victim); past that the victim reverts and more capital buys nothing.
+
+Whether 274 ETH a day is reachable in practice is exactly what the rest of this
+document measures, and it is the honest brake on the headline number: most
+victims leave no slack at all (median ~0%, p90 ~2%), so the daily total is
+bounded by how many loose-guard victims actually appear, not by the linear math
+itself.
+
 ## What the data shows
 
 ### Most of the market is invisible
@@ -334,7 +393,8 @@ sandwich), finishing at -0.17 ETH. Three things keep the verdict negative:
 3. **Fetch the V3 tick bitmap** so exposures across tick boundaries are exact.
 4. **Guard visibility by router family:** extend the decoders and measure how
    the slack distribution changes as coverage grows.
-5. **Write the thesis chapter** from `docs/research/` with the figures above.
+5. **A multi-day ground-truth window** to pin the daily target rate that the
+   profit graph above depends on.
 
 ## Running it
 

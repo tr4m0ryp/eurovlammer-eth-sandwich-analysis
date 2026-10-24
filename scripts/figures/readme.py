@@ -15,7 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from eth_mev.config import DATA_DIR, REPO  # noqa: E402
-from eth_mev.measure.exposure.v2.mesp import _profit_buy  # noqa: E402
+from eth_mev.measure.exposure.v2.mesp import _profit_buy, exposure, tokens_for_net  # noqa: E402
 from eth_mev.onchain.decode.v2.swaps import Swap  # noqa: E402
 
 OUT = REPO / "docs" / "research" / "figures" / "readme"
@@ -103,12 +103,45 @@ def exposure_curve(th: dict, name: str) -> None:
     plt.close(fig)
 
 
+# Daily-profit-vs-cap model illustration. Reproduces the linear result from
+# docs/research/methodology/sandwich-methodology.md §12 on the documented representative victim
+# (100-ETH buy, 10% guard slack, 30 bps, ~2,000-ETH pool): profit per sandwich scales ~linearly
+# with the per-trade capital cap until the victim's guard binds. TARGETS_PER_DAY is a stated model
+# assumption, not a measurement (the measured whale rate is "one per several minutes").
+TARGETS_PER_DAY = 288  # one sandwichable whale every 5 minutes
+
+
+def capital_daily(th: dict, name: str) -> None:
+    x, y, amount = 2_000e18, 200_000e18, 100e18
+    r = 0.003
+    out = tokens_for_net(x, y, amount / (1 + r))
+    victim = Swap(tx_hash="", block_number=0, tx_index=0, log_index=0, venue="", pool="", token0="",
+                  token1="", user="", is_buy=True, amount_in=int(amount), amount_out=0, x_pre=x,
+                  y_pre=y, fee_bps=30.0, kind="in", amount=int(amount), limit=int(out / 1.10))
+    caps = [i * 0.5e18 for i in range(1, 41)]  # 0.5 .. 20 ETH
+    daily = [TARGETS_PER_DAY * exposure(victim, capital=c).mesp / 1e18 for c in caps]
+    fig, ax = plt.subplots(figsize=(8, 4.2))
+    ax.plot([c / 1e18 for c in caps], daily, color=th["a"], lw=2)
+    ten = exposure(victim, capital=10e18)
+    y10 = TARGETS_PER_DAY * ten.mesp / 1e18
+    ax.plot([10.0], [y10], "o", color=th["b"], ms=7)
+    ax.annotate(f"10 ETH cap\n≈ {ten.mesp / 1e18:.2f} ETH/trade, ≈ {y10:,.0f} ETH/day",
+                xy=(10.0, y10), xytext=(10.6, 0.55 * y10), color=th["fg"], fontsize=10)
+    ax.set_xlabel("max capital per trade (ETH)")
+    ax.set_ylabel(f"expected daily profit (ETH, {TARGETS_PER_DAY:,} targets/day)")
+    ax.set_title("Daily profit scales linearly with the per-trade capital cap")
+    _style(ax, fig, th)
+    fig.savefig(OUT / f"capital-daily-{name}.png", bbox_inches="tight", dpi=200)
+    plt.close(fig)
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for name, th in THEMES.items():
         guard_cdf(th, name)
         funnel(th, name)
         exposure_curve(th, name)
+        capital_daily(th, name)
     print(f"wrote figures to {OUT}")
 
 
