@@ -18,8 +18,6 @@ percentile is tunable (``MEV_GUARD_PERCENTILE``) to trade conservative screening
 """
 from __future__ import annotations
 
-import math
-import os
 import time
 from pathlib import Path
 
