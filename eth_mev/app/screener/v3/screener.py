@@ -31,7 +31,7 @@ class V3Screener(ScoringMixin):
             percentile=float(os.environ.get("MEV_GUARD_PERCENTILE", "50")),
             db_path=os.environ.get("MEV_GUARD_DB", str(DATA_DIR / "guard_estimator.duckdb")),
         )
-        self.n_blocks = self.n_swaps = self.n_strict = self.n_sandwiches = 0
+        self.n_blocks = self.n_swaps = self.n_strict = self.n_sandwiches = self.last_block = 0
         self.pool_cache: dict[str, dict] = {}
         self.pool_freq: dict[str, int] = {}
         # Funnel counters for the strict-rate analysis (why are targets so rare?).
@@ -97,6 +97,7 @@ class V3Screener(ScoringMixin):
             if row:
                 strict_rows.append(row)
         self.n_blocks += 1
+        self.last_block = number
         if strict_rows:
             self.hub.add_strict(strict_rows)
             self.n_strict += len(strict_rows)
@@ -111,7 +112,7 @@ class V3Screener(ScoringMixin):
     def _publish_stats(self) -> None:
         self.hub.set_stats({
             "blocks": self.n_blocks, "swaps": self.n_swaps, "strict": self.n_strict,
-            "sandwiches": self.n_sandwiches, "block": self.n_blocks,
+            "sandwiches": self.n_sandwiches, "block": self.last_block,
             "funnel": dict(self.funnel),
             "wallet": self.alloc.stats(),
             "guard": self.guard_est.stats(),
