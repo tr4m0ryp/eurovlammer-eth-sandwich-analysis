@@ -12,11 +12,11 @@ from collections import deque
 from ..exposure.v2.mesp import exposure
 
 BUDGET_WEI = 1_000_000_000_000_000_000   # 1 ETH
-MIN_PROFIT_WEI = 10_000_000               # 0.01 ETH
+MIN_PROFIT_WEI = 10 ** 16                 # 0.01 ETH
 MIN_ROI = 0.01
 FREQ_BLOCKS = 12                          # ~2.5 minutes on mainnet
 MODEL_THRESHOLD = 0.02
-MIN_MESP_INTEREST = 10_000_000
+MIN_MESP_INTEREST = 10 ** 16              # 0.01 ETH
 
 
 def interesting(row: dict) -> bool:
