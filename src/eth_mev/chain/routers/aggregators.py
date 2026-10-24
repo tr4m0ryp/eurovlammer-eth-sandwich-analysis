@@ -124,7 +124,6 @@ def _decode_paraswap_swap(payload: bytes) -> dict | None:
 def decode_aggregator(to: str, input_: str, tx: dict[str, Any]) -> dict | None:
     """Decode a victim swap from an aggregator router call. Returns the guard triad + token pair,
     or ``None`` when ``to`` is not a known aggregator or the calldata doesn't decode."""
-    to_l = (to or "").lower()
     inp = (input_ or "")[2:] if isinstance(input_, str) and input_.startswith("0x") else (input_ or "")
     if not inp or len(inp) < 8:
         return None

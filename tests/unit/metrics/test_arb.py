@@ -1,7 +1,7 @@
 """Unit tests: atomic arb math (V2 + V3 unified), flash-loan calldata, executor calldata."""
 from __future__ import annotations
 
-from eth_mev.metrics.arb import ArbResult, Market, find_best_arb, optimal_arb, two_leg_profit
+from eth_mev.metrics.arb import Market, find_best_arb, two_leg_profit
 from eth_mev.metrics.v3.tick_math import price_to_sqrt_x96
 from eth_mev.exec.arb.flash_loan import (aave_flash_loan_simple_calldata, balancer_flash_loan_calldata)
 from eth_mev.exec.arb.build import _leg, execute_arb_calldata
