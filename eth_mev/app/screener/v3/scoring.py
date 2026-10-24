@@ -88,7 +88,7 @@ class ScoringMixin:
         self.pool_freq[s.pool] = self.pool_freq.get(s.pool, 0) + 1
         return {
             "tx_hash": s.tx_hash, "block": number, "pool": s.pool,
-            "fee_ppm": s.fee, "price": pool.spot_price, "amount_in": amount_in,
+            "fee_ppm": state.get("fee_ppm") or s.fee, "price": pool.spot_price, "amount_in": amount_in,
             "amount_out_min": amount_out_min, "mesp": e.mesp, "front": e.front,
             "roi": e.mesp / e.front if e.front else 0.0, "slack": e.slack,
             "pool_freq": self.pool_freq[s.pool], "zero_for_one": s.direction > 0,

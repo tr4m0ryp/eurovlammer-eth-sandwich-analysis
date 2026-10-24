@@ -21,7 +21,7 @@ async def main() -> None:
     a = ap.parse_args()
     async with Rpc(rpc_url(), rps=10, concurrency=8) as rpc:
         screener = ArbScreener(rpc)
-        runner = await serve(screener.hub, "127.0.0.1", a.port)
+        runner = await serve(screener.hub, "127.0.0.1", a.port, view="arb")
         print(f"arb dry-run on http://127.0.0.1:{a.port}")
         try:
             await screener.run(a.hours)

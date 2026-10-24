@@ -6,6 +6,8 @@ const fmt = {
   int: (v) => (v == null ? "" : Math.round(v).toLocaleString("en-US")),
   n: (v, d = 2) => (v == null ? "" : Number(v).toFixed(d)),
   pct: (v) => (v == null || !isFinite(v) ? "n/a" : (100 * v).toFixed(1) + "%"),
+  pct3: (v) => (v == null || !isFinite(v) ? "n/a" : (100 * v).toFixed(3) + "%"),
+  slack3: (v) => (v == null ? "?" : v >= 10 ? "none" : (100 * v).toFixed(3) + "%"),
   slack: (v) => (v == null ? "?" : v >= 10 ? "none" : (100 * v).toFixed(1) + "%"),
   time: (ms) => new Date(ms).toISOString().slice(11, 19),
   sol: (l) => (l == null ? "" : (l / 1e9).toFixed(l >= 1e10 ? 1 : 3)),

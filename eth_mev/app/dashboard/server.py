@@ -24,9 +24,13 @@ def _topics(req: web.Request, key: str) -> frozenset[str] | None:
     return frozenset(t for t in raw.split(",") if t) or None
 
 
-def build_app(hub: Hub) -> web.Application:
+def build_app(hub: Hub, view: str = "v3") -> web.Application:
+    """Serve ``views/<view>.html`` at ``/`` (``v3`` or ``arb``) plus the shared API and assets."""
+    page = PAGE / "views" / f"{view}.html"
+    if not page.is_file():
+        raise ValueError(f"unknown dashboard view {view!r}")
     async def index(_):
-        return web.FileResponse(PAGE / "index.html", headers=NO_CACHE)
+        return web.FileResponse(page, headers=NO_CACHE)
 
     async def static(req):
         path = (PAGE / req.match_info["path"]).resolve()
@@ -82,8 +86,8 @@ def build_app(hub: Hub) -> web.Application:
     return a
 
 
-async def serve(hub: Hub, host: str, port: int) -> web.AppRunner:
-    runner = web.AppRunner(build_app(hub))
+async def serve(hub: Hub, host: str, port: int, view: str = "v3") -> web.AppRunner:
+    runner = web.AppRunner(build_app(hub, view))
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
     return runner
