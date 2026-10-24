@@ -12,7 +12,7 @@ from typing import Any
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
-from ..ingest.rpc import Rpc
+from ...ingest.rpc import Rpc
 from .sign import load_account
 
 # Canonical Flashbots relay (mainnet). Also used by several builders.

@@ -14,8 +14,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from . import v3_math as v3
-from . import curve
+from .v3 import tick_math as v3
+from .v2 import curve
 
 GOLD = (math.sqrt(5) - 1) / 2
 Q96 = 1 << 96

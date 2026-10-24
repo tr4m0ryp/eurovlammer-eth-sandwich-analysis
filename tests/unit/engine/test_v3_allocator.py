@@ -1,7 +1,7 @@
 """Unit tests: V3 allocator — no-flash-loan and flash-loan modes."""
 from __future__ import annotations
 
-from eth_mev.engine.v3_allocator import V3Allocator, WEI
+from eth_mev.engine.allocation.v3 import V3Allocator, WEI
 
 
 def _row(mesp=0.01 * WEI, front=0.045 * WEI, pool="0xpool", tx="0xabc", slack=0.05):
