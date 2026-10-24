@@ -1,10 +1,12 @@
-"""Filesystem anchors shared by the entry points: the repository root and its ``data/`` directory.
+"""Filesystem anchors shared by the entry points.
 
-``ETH_MEV_ROOT`` overrides the root; the default assumes the package sitting at the repo root."""
+``REPO`` is this checkout (docs, figures and reports are written here). ``ROOT`` is the data root,
+overridable with ``ETH_MEV_ROOT`` so run databases can live elsewhere without moving repo outputs."""
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-ROOT = Path(os.environ.get("ETH_MEV_ROOT", Path(__file__).resolve().parents[1]))
+REPO = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("ETH_MEV_ROOT", REPO))
 DATA_DIR = ROOT / "data"
