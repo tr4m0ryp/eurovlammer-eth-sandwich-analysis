@@ -1,8 +1,16 @@
+# local state and secrets
+.env
+.no-autocommit
+
+# gathered data and logs stay local (never deleted, compressed when archived)
 data/
 logs/
 ref/
+
+# environments and build output
 .venv/
 __pycache__/
 *.pyc
-.env
-*.egg-info/.env.example
+*.egg-info/
+.pytest_cache/
+.ruff_cache/

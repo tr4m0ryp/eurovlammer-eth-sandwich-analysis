@@ -88,7 +88,7 @@ class FlashbotsRelay:
 
 
 def live_gates_met() -> tuple[bool, list[str]]:
-    """Report which go-live gates are satisfied (used by run.py to refuse silent live sends)."""
+    """Report which go-live gates are satisfied (used by the V2 screener to refuse silent live sends)."""
     missing = []
     if not _live_enabled():
         missing.append("LIVE flag not set")
