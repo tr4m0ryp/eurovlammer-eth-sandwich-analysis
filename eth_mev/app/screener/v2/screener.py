@@ -45,6 +45,7 @@ class Screener:
         self.live = live
         self.relay = FlashbotsRelay(Rpc(rpc_url())) if live else None
         self.fees = _resolve_fee_heads()
+        self.n_blocks = self.n_swaps = self.n_sandwiches = self.block = 0
 
     async def on_pending(self, rpc: Rpc, row: dict) -> None:
         """Decode a pending swap, score, screen, risk-gate, then commit (virtual) capital."""
@@ -69,8 +70,8 @@ class Screener:
             if accept:
                 self.alloc.step(sr.get("block") or 0, [sr])
         self.store.pending([row])
-        self.hub.update(self.alloc.state())
-        self.hub.publish({"kind": "pending", "p": p, "pool": row.get("pool")})
+        self.hub.add_strict([dict(r, front=r.get("front_budget")) for r in strict_rows])
+        self._publish_stats()
 
     async def on_head(self, rpc: Rpc, head: dict) -> None:
         """Settle the block a newHeads header confirms: decode its swaps, label sandwiches.
@@ -91,7 +92,6 @@ class Screener:
         except RuntimeError:
             return
         if not isinstance(blk, dict) or not blk.get("transactions"):
-            self.hub.update(self.alloc.state())
             return
         swaps, owners = await self._decode_block(rpc, prev, blk)
         # label + persist + feed the allocator's settlement
@@ -99,9 +99,15 @@ class Screener:
         self.alloc.set_settlement(self.labeller.settlement)
         self.alloc.step(prev, [])
         self._persist_block(prev, swaps, result)
-        self.hub.update(self.alloc.state())
-        self.hub.publish({"kind": "settled_block", "block": prev, "n_swaps": len(swaps),
-                          "n_sandwiches": len(result["sandwiches"])})
+        self.n_blocks += 1
+        self.n_swaps += len(swaps)
+        self.n_sandwiches += len(result["sandwiches"])
+        self.block = prev
+        self._publish_stats()
+
+    def _publish_stats(self) -> None:
+        self.hub.set_stats({"blocks": self.n_blocks, "swaps": self.n_swaps, "block": self.block,
+                            "strict": self.strict.n_strict, "sandwiches": self.n_sandwiches})
 
     async def _decode_block(self, rpc: Rpc, number: int, blk: dict) -> tuple[list, dict]:
         """Decode a confirmed block's Swap logs into ``Swap`` records + tx-owner map."""

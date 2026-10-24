@@ -20,3 +20,10 @@ tr.new td { animation: flash 1.6s ease-out; }
 .bar .col { align-self: end; background: var(--brand); border-radius: 4px 4px 0 0; min-height: 2px; opacity: .85; }
 .bar .x { font-size: 11px; line-height: 14px; color: var(--tertiary); text-align: center; font-family: var(--font-num); }
 @media (max-width: 640px) { .bars { gap: 3px; } .bar .v { font-size: 10px; } input[type="range"] { width: 100%; } }
+.hbars { display: grid; gap: 10px; }
+.hbar { display: grid; grid-template-columns: minmax(180px, 280px) 1fr 120px; gap: 12px; align-items: center; }
+.hbar .x { font-size: 13px; color: var(--secondary); }
+.hbar .track { height: 14px; background: var(--accent); border-radius: 4px; overflow: hidden; }
+.hbar .track i { display: block; height: 100%; background: var(--brand); opacity: .85; }
+.hbar .v { font: 500 13px/18px var(--font-num); text-align: right; }
+.hbar .v small { color: var(--tertiary); }

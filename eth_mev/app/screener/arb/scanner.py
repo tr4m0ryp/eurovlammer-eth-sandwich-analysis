@@ -25,7 +25,7 @@ class ArbScreener:
     def __init__(self, rpc: Rpc):
         self.rpc = rpc
         self.hub = Hub()
-        self.n_blocks = 0
+        self.n_blocks = self.last_block = 0
         self.n_arbs = 0
         self.n_markets = 0
         self.last_base_fee = 20_000_000_000      # 20 gwei fallback
@@ -65,6 +65,7 @@ class ArbScreener:
         self.n_filtered = len(oriented) - len(filtered)
         r = find_best_arb(filtered, LOAN_WEI, FLASH_FEE_BPS, MIN_PROFIT_WEI)
         self.n_blocks += 1
+        self.last_block = number
         if r and r.profit_wei > self.gas_bribe_wei:
             self.n_arbs += 1
             self.hub.add_strict([{
@@ -78,7 +79,7 @@ class ArbScreener:
                 "token1": r.buy.token1[:12], "seen_ms": int(time.time() * 1000),
             }])
         self.hub.set_stats({
-            "blocks": self.n_blocks, "arbs": self.n_arbs, "block": self.n_blocks,
+            "blocks": self.n_blocks, "arbs": self.n_arbs, "block": self.last_block,
             "markets": self.n_markets, "filtered": self.n_filtered,
             "loan_eth": LOAN_WEI / 1e18, "flash_fee_bps": FLASH_FEE_BPS,
             "base_fee_gwei": self.last_base_fee / 1e9, "min_depth_eth": MIN_DEPTH_WEI / 1e18,
