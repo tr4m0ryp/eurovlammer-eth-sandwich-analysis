@@ -7,7 +7,6 @@ broadcast) and checks it would not revert and the balance delta is sane. This is
 """
 from __future__ import annotations
 
-from typing import Any
 
 from ...ingest.rpc import Rpc
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
 from ...ingest.rpc import Rpc
