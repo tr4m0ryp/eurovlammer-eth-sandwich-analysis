@@ -43,7 +43,7 @@ async def main() -> None:
     app = build_app(screener.hub)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", a.port)
+    site = web.TCPSite(runner, "127.0.0.1", a.port)
     await site.start()
 
     async with Rpc(rpc_url_str) as rpc:
