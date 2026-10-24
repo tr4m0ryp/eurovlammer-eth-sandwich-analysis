@@ -10,15 +10,12 @@ import json
 import math
 import random
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from backtest import build_replay, load_strict, run_mc  # noqa: E402
+from .backtest import build_replay, load_strict, run_mc
+from .locate import OUT, resolve_db
 
 MC_SEEDS = 5
 
-ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / "data" / "exports" / "finetune"
 
 # Ranges (finetune-prompt.md suggestions, ETH).
 RANGES = {
@@ -110,10 +107,7 @@ if __name__ == "__main__":
     ap.add_argument("--db", type=str, default=None)
     ap.add_argument("--refine-best", type=str, default=None)
     args = ap.parse_args()
-    db = Path(args.db) if args.db else next((ROOT / "data").glob("live_*/live.duckdb"), None)
-    if db is None:
-        print("no DuckDB found; pass --db", file=sys.stderr)
-        sys.exit(1)
+    db = resolve_db(args.db)
     df = load_strict(db, db.parent / "strict_replay.parquet")
     replay = build_replay(df)
     OUT.mkdir(parents=True, exist_ok=True)

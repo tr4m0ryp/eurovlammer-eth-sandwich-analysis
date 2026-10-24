@@ -15,8 +15,9 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB = ROOT / "data" / "guard_estimator.duckdb"
+from eth_mev.paths import DATA_DIR
+
+DEFAULT_DB = DATA_DIR / "guard_estimator.duckdb"
 
 
 def load_slacks(db_path: Path) -> list[float]:
