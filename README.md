@@ -1,9 +1,5 @@
 # trenches-eth: Ethereum Sandwich-Exposure Analysis
 
-<a href="docs/research/figures/readme/platform.mp4"><img src="docs/research/figures/readme/platform-preview.gif" width="100%" alt="A one-minute walkthrough of the live dry-run dashboards: V3 exposure targets, the visibility funnel and the arbitrage scanner"></a>
-
-<sub>Recorded live on Ethereum mainnet, 2026-10-24: the screeners ran 19:57 to 20:25 UTC (blocks 26,264,750 to 26,264,890) and the figures on the cards come from that run. Real decoded swaps, nothing mocked and nothing sent. Click for the MP4.</sub>
-
 > **Dropped.** The profitable numbers below need a large front, and that front
 > cannot be borrowed: a flash loan repays atomically in a single transaction,
 > while a sandwich is two transactions. That leaves only our own capital, which
