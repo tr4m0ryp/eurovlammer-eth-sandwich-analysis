@@ -8,7 +8,7 @@ front size.
 ## 1. Net-profit model (EIP-1559)
 
 A sandwich is three legs on one pool in one block: **front → victim → back**. Its extractable value is
-`mesp` (golden-section MESP from `metrics/v3_exposure.py`), already net of both pool fees. The cost of
+`mesp` (golden-section MESP from `metrics/v3/exposure.py`), already net of both pool fees. The cost of
 landing it ahead of other searchers is:
 
 ```

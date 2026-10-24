@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eth-mev"
 version = "0.1.0"
-description = "Ethereum mempool-sandwich engine (Uniswap V2 first)"
+description = "Ethereum sandwich-exposure measurement and replay (thesis research)"
 requires-python = ">=3.12"
 dependencies = [
     "web3>=7",
