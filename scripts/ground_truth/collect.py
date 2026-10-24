@@ -7,7 +7,7 @@ persists to ``data/live_*/live.duckdb`` (``included_swaps`` + ``sandwiches`` + `
 
 Usage:
     ETH_WS_URL=wss://eth.drpc.org ETH_RPC_URL=https://eth.drpc.org \
-      .venv/bin/python scripts/collect_ground_truth.py --hours 3
+      .venv/bin/python -m scripts.ground_truth.collect --hours 3
 """
 from __future__ import annotations
 
@@ -21,10 +21,9 @@ from eth_mev.chain.v2.constants import ROUTERS as _ROUTERS
 from eth_mev.chain.tx import normalized_tx
 from eth_mev.ingest.rpc import Rpc, Subscriber
 from eth_mev.metrics.sandwich import Sandwich, find_sandwiches, top_heavy
+from eth_mev.paths import DATA_DIR
 from eth_mev.store.writer import Store
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
 
 
 class Collector:
