@@ -6,7 +6,7 @@ committed victim that actually got sandwiched is a win (a race, won with ``WIN_R
 only ``CAPTURE_FRACTION`` of the predicted MESP, minus the EIP-1559 cost of landing ahead); a victim
 that stayed clean is an unwind at adverse movement.
 
-Field remap from the Solana allocator (``notes/migration-analysis.md``):
+Field remap from the Solana allocator (``notes/methodology/migration-analysis.md``):
   ``front_budget -> position_wei``, ``mesp_budget -> expected_profit_wei``,
   ``cu_price/jito_tip -> priority_fee/bribe``, ``victims dict -> (block, tx_hash)`` settlement,
   outcomes ``win / reverted_or_outbid / no_sandwich``.

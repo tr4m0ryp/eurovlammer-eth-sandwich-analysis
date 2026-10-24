@@ -58,5 +58,5 @@ unknowable offline and is the dominant uncertainty.
 - Private-order-flow *visibility*: **reachable in dry-run** via the MEV-Share SSE stream.
 - Actually *landing* ahead (the profitable half): **still gated** on funded keys + a builder
   relationship + a measured `WIN_RATE`. This report does **not** change the overall **NO-GO-for-live**
-  stance from `notes/finetune-report.md`; it extends the engine's *visibility* and *V3 coverage*, not
+  stance from `notes/reports/finetune-report.md`; it extends the engine's *visibility* and *V3 coverage*, not
   its *edge*.

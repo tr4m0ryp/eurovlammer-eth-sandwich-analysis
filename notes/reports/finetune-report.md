@@ -125,10 +125,10 @@ Until both hold, do not flip the `LIVE` gate.
 ## Files
 
 - Engine: `src/eth_mev/{chain,ingest,metrics,engine,exec,screen,store,serve}/` (all phases built, `pytest` green: 28 tests).
-- Screener: `run.py` (dry-run by default; `LIVE` + funded keys required for the live path).
+- Screener: `python -m eth_mev.apps.v2_screener` (dry-run by default; `LIVE` + funded keys required for the live path).
 - Finetune: `scripts/finetune/{backtest,sweep,report}.py`.
-- Ground-truth collector: `scripts/collect_ground_truth.py`.
-- This report: `notes/finetune-report.md`.
+- Ground-truth collector: `python -m scripts.ground_truth.collect`.
+- This report: `notes/reports/finetune-report.md`.
 
 ## 6. Next step (post-collection, mechanical)
 
