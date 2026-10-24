@@ -45,7 +45,7 @@ class Allocator(SnapshotMixin):
     BASE_FEE_WEI = int(os.environ.get("MEV_BASE_FEE_WEI", str(int(20 * 1e9))))  # current base fee per gas
     # Selectivity gates (the lever on "no sandwich").
     MIN_P = float(os.environ.get("MEV_MIN_COMMIT_P", "0.1"))            # model-score floor
-    MIN_PROFIT_WEI = int(os.environ.get("MEV_MIN_COMMIT_PROFIT", "10000000"))  # 0.01 ETH in wei? -> 1e7 wei
+    MIN_PROFIT_WEI = int(os.environ.get("MEV_MIN_COMMIT_PROFIT", str(10 ** 16)))  # 0.01 ETH
     HISTORY_MAX = 500
 
     def __init__(self, initial_eth: float = 1.0, budget_eth: float = 1.0, seed: int | None = None):
