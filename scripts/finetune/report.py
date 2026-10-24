@@ -109,7 +109,7 @@ def write_report(best, best_mc, table, wr_curve, cap_curve, bribe_curve, full_be
     L.append("|---|---|")
     for k, d in sorted(leverage_agg.items(), key=lambda kv: -kv[1]):
         L.append(f"| `{k}` | {d:.4f} |")
-    L.append(f"\n## 5. Recommendation + go/no-go\n\n")
+    L.append("\n## 5. Recommendation + go/no-go\n\n")
     L.append(_recommendation(full_best))
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text("\n".join(L) + "\n")
