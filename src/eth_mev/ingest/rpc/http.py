@@ -1,0 +1,151 @@
+"""Raw ``eth_*`` JSON-RPC client over aiohttp: the paced HTTP surface for one-shot calls.
+
+Mirrors ``tlive/ingest/rpc.py``: a paced HTTP client for one-shot calls (``eth_getBlockByNumber``,
+``eth_call``, ``eth_getTransactionReceipt``) and a separate WebSocket subscription surface for the
+stream (``newPendingTransactions`` + ``newHeads``). Read-only by default: signing is separate in
+``exec/bundle/sign.py`` and requires explicit opt-in.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from typing import Any
+
+import aiohttp
+
+# JSON-RPC error codes that mean "not available yet" rather than a real failure.
+SKIPPED = (-32000, -32001, -32004, -32601, -32602)
+
+
+def rpc_url(env: str = "ETH_RPC_URL") -> str:
+    url = os.environ.get(env)
+    if not url:
+        raise RuntimeError(f"env var {env} is not set")
+    return url
+
+
+def ws_url(env: str = "ETH_WS_URL") -> str | None:
+    return os.environ.get(env) or None
+
+
+class Rpc:
+    """Paced HTTP client. A 429 costs an exponential backoff; pacing below the limit costs nothing."""
+
+    def __init__(self, url: str, concurrency: int = 8, timeout_s: float = 30.0, rps: float = 12.0):
+        self.url = url
+        self.sem = asyncio.Semaphore(concurrency)
+        self.timeout = aiohttp.ClientTimeout(total=timeout_s)
+        self.gap = 1.0 / rps
+        self.next_t = 0.0
+        self.session: aiohttp.ClientSession | None = None
+        self.n_calls = self.n_retry = 0
+        self.last_error: Any = None
+        self._id = 0
+
+    async def __aenter__(self) -> "Rpc":
+        self.session = aiohttp.ClientSession(timeout=self.timeout, headers={"accept-encoding": "gzip"})
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        if self.session:
+            await self.session.close()
+
+    async def _pace(self) -> None:
+        now = asyncio.get_running_loop().time()
+        wait = self.next_t - now
+        self.next_t = max(now, self.next_t) + self.gap
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    async def call(self, method: str, params: list, retries: int = 6) -> Any:
+        self._id += 1
+        body = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
+        for attempt in range(retries):
+            async with self.sem:
+                await self._pace()
+                self.n_calls += 1
+                try:
+                    async with self.session.post(self.url, json=body) as r:
+                        if r.status == 429:
+                            self.next_t += 1.0
+                        if r.status == 429 or r.status >= 500:
+                            raise aiohttp.ClientResponseError(r.request_info, (), status=r.status)
+                        payload = await r.read()
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    self.n_retry += 1
+                    self.last_error = repr(e)[:200]
+                    await asyncio.sleep(min(0.5 * 2 ** attempt, 20))
+                    continue
+            data = json.loads(payload)
+            err = data.get("error")
+            if err is None:
+                return data.get("result")
+            if err.get("code") in SKIPPED:
+                return None
+            self.n_retry += 1
+            self.last_error = err
+            await asyncio.sleep(min(0.5 * 2 ** attempt, 20))
+        raise RuntimeError(f"{method} failed after {retries} attempts: {self.last_error}")
+
+    # ---- convenience ----
+    async def block_by_number(self, number: int | str, full: bool = False) -> Any:
+        return await self.call("eth_getBlockByNumber", [hex(number) if isinstance(number, int) else number, full])
+
+    async def transaction_receipt(self, tx_hash: str) -> Any:
+        return await self.call("eth_getTransactionReceipt", [tx_hash])
+
+    async def block_receipts(self, number: int | str) -> list | None:
+        """All receipts for one block in a single RPC call (``eth_getBlockReceipts``).
+
+        One call instead of one-per-tx: this is what keeps block processing at chain speed."""
+        return await self.call("eth_getBlockReceipts", [hex(number) if isinstance(number, int) else number])
+
+    async def batch_calls(self, calls: list[tuple[str, list]]) -> list[Any]:
+        """Run many JSON-RPC calls in ONE round-trip, chunked to the provider's batch limit.
+
+        drpc (free) rejects batches >3 requests, so we slice into ≤3-call sub-batches; still a large
+        win over N round-trips. Returns the results in the same order, ``None`` for failures."""
+        if not calls:
+            return []
+        MAX_CHUNK = 3
+        out: list[Any] = [None] * len(calls)
+        for start in range(0, len(calls), MAX_CHUNK):
+            chunk = calls[start:start + MAX_CHUNK]
+            batch = [{"jsonrpc": "2.0", "id": i, "method": m, "params": p}
+                     for i, (m, p) in enumerate(chunk)]
+            async with self.sem:
+                await self._pace()
+                self.n_calls += len(chunk)
+                try:
+                    async with self.session.post(self.url, json=batch) as r:
+                        if r.status == 429:
+                            self.next_t += 1.0
+                        payload = await r.read()
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    self.n_retry += 1
+                    self.last_error = repr(e)[:200]
+                    continue
+            try:
+                responses = json.loads(payload)
+                if isinstance(responses, list):
+                    by_id = {resp.get("id"): resp for resp in responses if isinstance(resp, dict)}
+                    for i in range(len(chunk)):
+                        resp = by_id.get(i)
+                        if resp is not None and "error" not in resp:
+                            out[start + i] = resp.get("result")
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return out
+
+    async def call_view(self, to: str, data: str, block: str = "latest") -> Any:
+        return await self.call("eth_call", [{"to": to, "data": data}, block])
+
+    async def chain_id(self) -> Any:
+        return await self.call("eth_chainId", [])
+
+    async def gas_price(self) -> Any:
+        return await self.call("eth_gasPrice", [])
+
+    async def fee_history(self, blocks: int = 4, newest: str = "latest", pct: list = None) -> Any:
+        return await self.call("eth_feeHistory", [blocks, newest, pct or [25, 50, 75]])
