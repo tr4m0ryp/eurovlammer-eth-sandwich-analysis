@@ -14,11 +14,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from eth_mev.config import DATA_DIR, ROOT  # noqa: E402
+from eth_mev.config import DATA_DIR, REPO  # noqa: E402
 from eth_mev.measure.exposure.v2.mesp import _profit_buy  # noqa: E402
 from eth_mev.onchain.decode.v2.swaps import Swap  # noqa: E402
 
-OUT = ROOT / "docs" / "research" / "figures" / "readme"
+OUT = REPO / "docs" / "research" / "figures" / "readme"
 THEMES = {
     "light": {"bg": "#ffffff", "fg": "#1f2328", "grid": "#d0d7de", "a": "#0969da", "b": "#cf222e"},
     "dark": {"bg": "#0d1117", "fg": "#e6edf3", "grid": "#30363d", "a": "#4493f8", "b": "#f85149"},
