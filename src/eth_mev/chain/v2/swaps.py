@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..constants import ROUTERS, SELECTOR_TO_KIND, SWAP_EVENT_TOPIC
+from .constants import ROUTERS, SELECTOR_TO_KIND, SWAP_EVENT_TOPIC
 
 # Case-insensitive router -> venue lookup (tx ``to`` fields arrive lower-cased from most providers).
 _ROUTERS_LOWER = {k.lower(): v for k, v in ROUTERS.items()}

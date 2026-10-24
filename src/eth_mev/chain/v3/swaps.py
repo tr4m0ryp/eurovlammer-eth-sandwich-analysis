@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .v3_constants import (V3_SELECTORS, V3_SWAP_EVENT_TOPIC,
+from .constants import (V3_SELECTORS, V3_SWAP_EVENT_TOPIC,
                            EXACT_INPUT_TYPES, EXACT_OUTPUT_TYPES, SINGLE_TYPES)
 
 EXACT_IN, EXACT_OUT = "in", "out"

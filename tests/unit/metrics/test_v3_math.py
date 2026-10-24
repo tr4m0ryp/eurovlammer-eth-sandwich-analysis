@@ -1,7 +1,7 @@
 """Unit tests: Uniswap V3 concentrated-liquidity maths (exact tick/swap figures)."""
 from __future__ import annotations
 
-from eth_mev.metrics.v3_math import (
+from eth_mev.metrics.v3.tick_math import (
     Q96, amount0_delta, amount1_delta, exact_input, input_to_output, output_to_input,
     price_to_sqrt_x96, sqrt_ratio_x96, tick_at_sqrt_ratio,
 )

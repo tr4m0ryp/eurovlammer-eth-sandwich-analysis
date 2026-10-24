@@ -15,8 +15,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..chain.swaps import EXACT_IN, EXACT_OUT
-from ..chain.swaps.model import Swap
+from ...chain.v2 import EXACT_IN, EXACT_OUT
+from ...chain.v2.swaps import Swap
 from .curve import net_for_tokens, sol_for_tokens, tokens_for_net
 
 GOLD = (math.sqrt(5) - 1) / 2
