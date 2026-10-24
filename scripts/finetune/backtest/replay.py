@@ -18,14 +18,14 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from eth_mev.metrics.v2.exposure import _swap_from_row, exposure
+from eth_mev.measure.exposure.v2.mesp import _swap_from_row, exposure
 
 BUDGET = int(1e18)          # 1 ETH
-MIN_PROFIT = 10_000_000     # 0.01 ETH
+MIN_PROFIT = 10 ** 16       # 0.01 ETH
 MIN_ROI = 0.01
 FREQ_BLOCKS = 12
 MODEL_THRESHOLD = 0.02
-MIN_MESP_INTEREST = 10_000_000
+MIN_MESP_INTEREST = 10 ** 16
 GAIN_SANE = 1e30            # wei sentinel for unbounded no-limit rows
 
 

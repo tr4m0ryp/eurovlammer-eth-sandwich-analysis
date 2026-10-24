@@ -1,7 +1,7 @@
 """Finetune report CLI.
 
 Usage:
-    .venv/bin/python -m scripts.finetune.report --n 1500 --seeds 20 --db data/live_.../live.duckdb
+    python3 . report --n 1500 --seeds 20 --db data/live_.../live.duckdb
 """
 from __future__ import annotations
 
