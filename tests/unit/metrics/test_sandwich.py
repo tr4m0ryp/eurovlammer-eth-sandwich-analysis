@@ -1,7 +1,7 @@
 """Unit tests: sandwich detection (inclusion-order) + the capital allocator lifecycle."""
 from __future__ import annotations
 
-from eth_mev.chain.swaps.model import Swap
+from eth_mev.chain.v2.swaps import Swap
 from eth_mev.metrics.sandwich import find_sandwiches, top_heavy
 
 

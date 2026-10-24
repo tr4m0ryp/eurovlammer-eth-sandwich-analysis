@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import math
 
-from eth_mev.chain.swaps.model import Swap
-from eth_mev.metrics.curve import net_for_tokens, sol_for_tokens, tokens_for_net
-from eth_mev.metrics.exposure import exposure, slack
+from eth_mev.chain.v2.swaps import Swap
+from eth_mev.metrics.v2.curve import net_for_tokens, sol_for_tokens, tokens_for_net
+from eth_mev.metrics.v2.exposure import exposure, slack
 
 
 def _swap(**kw) -> Swap:

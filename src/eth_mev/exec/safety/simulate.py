@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..ingest.rpc import Rpc
+from ...ingest.rpc import Rpc
 
 
 async def eth_call(rpc: Rpc, to: str, data: str, from_addr: str, value: int = 0,
