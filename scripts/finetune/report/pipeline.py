@@ -2,7 +2,7 @@
 
 Search runs on the first 80% of blocks; the last 20% is held out. The fast search uses the
 deterministic *expected* P&L, then the top candidates are re-scored with a Monte-Carlo mean over
-seeds. Produces ``notes/reports/finetune-report.md`` with a go/no-go.
+seeds. Produces ``docs/research/findings/finetune-report.md`` with a go/no-go.
 
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ BRIBES = [int(0.005 * 1e18), int(0.01 * 1e18), int(0.02 * 1e18), int(0.05 * 1e18
 
 
 def default_vector() -> dict:
-    return {"MIN_P": 0.1, "MIN_PROFIT_WEI": 10_000_000, "THETA0": 0.012, "THETA_INF": 0.004,
+    return {"MIN_P": 0.1, "MIN_PROFIT_WEI": 10 ** 16, "THETA0": 0.012, "THETA_INF": 0.004,
             "BETA": 0.004, "ALPHA_SCARCE": 0.5, "MAX_SLIPPAGE_FRAC": 0.05,
             "MIN_COUNTERPARTY_P": 0.02, "MAX_PRIORITY_FEE_WEI": 50_000_000_000}
 

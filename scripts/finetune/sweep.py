@@ -20,7 +20,7 @@ MC_SEEDS = 5
 # Ranges (finetune-prompt.md suggestions, ETH).
 RANGES = {
     "MIN_P": (0.02, 0.4),
-    "MIN_PROFIT_WEI": (100_000, 5_000_000_000),       # log-uniform wei
+    "MIN_PROFIT_WEI": (10 ** 14, 5 * 10 ** 16),       # log-uniform wei, 0.0001-0.05 ETH
     "THETA0": (0.004, 0.03),
     "THETA_INF": (0.001, 0.012),
     "BETA": (0.0, 0.02),
