@@ -6,7 +6,7 @@ const S = { strict: [], pending: [], view: "", stats: {}, wallet: {}, timer: 0 }
 
 // numeraire (wei) -> ETH, with 1e18 scale
 const eth = (w) => (w == null ? "" : (Number(w) / 1e18).toFixed(Number(w) >= 1e17 ? 3 : 5));
-const tier = (p) => (p == null ? "" : p + " bps");
+const tier = (ppm) => (ppm ? ppm / 100 + " bps" : "");
 const dir_label = (z) => (z ? "buy" : "sell");
 
 const pass = (x) => !S.view ||
@@ -16,16 +16,16 @@ function strictRow(x, fresh) {
   return `<tr${fresh ? ' class="new"' : ""}>
     <td class="num">${fmt.time(x.seen_ms || Date.now())}</td>
     <td class="num">${fmt.int(x.block)}</td>
-    <td class="num">${tier(x.fee_ppm ? x.fee_ppm / 10000 : null)}</td>
+    <td class="num">${tier(x.fee_ppm)}</td>
     <td class="mono">${fmt.short(x.pool)}</td>
     <td class="num">${fmt.n(x.price)}</td>
     <td class="num">${eth(x.amount_in)}</td>
-    <td class="num">${fmt.slack(x.slack)}</td>
+    <td>${x.via_default ? '<span class="tag dash">estimated</span>' : '<span class="tag brand">decoded</span>'}</td>
     <td class="num"><b>${eth(x.mesp)}</b></td>
     <td class="num">${eth(x.front)}</td>
-    <td class="num ${(x.roi || 0) >= 0.05 ? "good" : ""}">${fmt.pct(x.roi)}</td>
+    <td class="num ${(x.roi || 0) >= 0.05 ? "good" : ""}">${fmt.pct3(x.roi)}</td>
     <td class="num">${fmt.int(x.pool_freq)}</td>
-    <td class="num">${fmt.slack(x.slack)}</td>
+    <td class="num">${fmt.slack3(x.slack)}</td>
     <td>${dir_label(x.zero_for_one)}</td>
     <td><a class="mono" href="https://etherscan.io/tx/${x.tx_hash}" target="_blank" rel="noopener">${(x.tx_hash || "").slice(0, 8)}</a></td></tr>`;
 }
@@ -46,9 +46,9 @@ function renderStats() {
   const st = S.stats || {};
   $("#strict-live-stats").innerHTML = [
     stat("Blocks seen", fmt.int(st.blocks || 0), "confirmed blocks decoded"),
-    stat("V3 swaps decoded", fmt.int(st.swaps || 0), "Swap events on the public mempool"),
+    stat("V3 swaps decoded", fmt.int(st.swaps || 0), "Swap events in confirmed blocks"),
     stat("Strict targets", fmt.int(st.strict || 0), "MESP > round-trip fee"),
-    stat("Sandwiches detected", fmt.int(st.sandwiches || 0), "front + back around a victim"),
+    stat("Guards decoded", fmt.int(((st.funnel || {}).router_decoded || 0) + ((st.funnel || {}).aggregator_decoded || 0)), "victim amountOutMinimum read from calldata"),
   ].join("");
 }
 
@@ -82,6 +82,7 @@ function setStats(stats) {
     $("#live-t").textContent = `live, block ${fmt.int(t.block)}`;
   }
   renderStats();
+  renderFunnel(S.stats);
 }
 
 function walletInit(state) { S.wallet = state || {}; walletRender(); }
