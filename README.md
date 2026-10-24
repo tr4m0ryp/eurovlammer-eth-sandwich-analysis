@@ -283,6 +283,57 @@ front the expected daily profit is on the order of **tens of ETH per day**, and
 it stops growing past roughly 20 ETH because most victims cannot absorb a larger
 front without reverting.
 
+### Why it is linear, and where it stops
+
+On a constant-product pool with reserves $`(x, y)`$ and fee $`r`$, a front of $`D`$
+net numeraire buys $`t_1 = \frac{y D}{x + D}`$ tokens and leaves the pool at
+$`(x + D,\ \frac{y x}{x + D})`$. After a victim buy of $`a`$ net numeraire the pool
+is $`(x + D + a,\ \frac{y x}{x + D + a})`$, and selling the $`t_1`$ tokens back
+returns
+
+```math
+\mathrm{sellback}(D) = \frac{(x + D + a)^{2}\,D}{(x + D)^{2} + D\,a}
+```
+
+Expanding to first order in $`D`$ around zero,
+$`\mathrm{sellback}'(0) = \frac{(x + a)^{2}}{x^{2}}`$, so the sandwich profit for a
+front small against the pool is
+
+```math
+\pi(D) = (1 - r)\,\mathrm{sellback}(D) - (1 + r)\,D
+       \approx \left(2\frac{a}{x} - 2r\right)D
+```
+
+The slope is twice the victim's own price impact $`a/x`$ minus the round-trip fee.
+The return per trade is set by how hard the victim's trade moves the pool, not by
+anything the attacker controls, and it is positive only while $`a/x > r`$, which is
+why small-impact victims are never worth sandwiching. The victim's slack $`s`$
+enters only through the feasibility boundary: the victim reverts when its output
+falls below $`\text{amountOutMin} = t_{\text{victim}}(0) / (1 + s)`$, i.e. when
+
+```math
+\frac{t_{\text{victim}}(D)}{t_{\text{victim}}(0)}
+= \frac{x\,(x + a)}{(x + D)\,(x + D + a)}
+= \frac{1}{1 + s}
+```
+
+which, when the victim's trade is small against the pool, solves to
+
+```math
+D_{\max} \approx \frac{x\,s}{2}
+```
+
+Putting the two together, a single victim contributes
+
+```math
+\mathrm{MESP}(D) = \min\left(D,\ \frac{x\,s}{2}\right)\cdot\left(2\frac{a}{x} - 2r\right)
+```
+
+linear in the front up to $`x s / 2`$ and infeasible past it. Each victim is a line
+of slope $`2a/x - 2r`$ cut off at $`x s / 2`$; once the front is large enough that
+the remaining victims are all cut off by their own guard, more capital buys nothing,
+which is the saturation in the figure.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/capital-daily-dark.png">
   <img alt="Expected daily profit against the per-trade front" src="docs/research/figures/readme/capital-daily-light.png" width="90%">
