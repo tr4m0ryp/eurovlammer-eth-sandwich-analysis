@@ -29,8 +29,7 @@ and built this repository as the successor to
 On Ethereum the mechanism **works**, which is the reason the project lives here.
 The front-run model produces positive, fee-net profit on loose-guard victims, and
 that profit scales with the capital you commit to each trade. The
-[capital section](#profit-scales-linearly-with-the-per-trade-cap) below shows the
-numbers. What stopped us from turning it into a live bot was a combination of the
+[capital section](#what-the-per-trade-cap-actually-buys) below shows the numbers. What stopped us from turning it into a live bot was a combination of the
 honest caveats measured throughout this document, the cost of landing first and
 the trades hidden in private order flow, and, more importantly, the conclusion
 that what we were building is **sandwiching**: it extracts value from ordinary
@@ -176,7 +175,7 @@ saturating at 0.40 because the Solana predecessor never measured precision
 above about 40%:
 
 ```math
-p = \operatorname{clip}\!\left(0.02 + 0.10\,\log_{10}(1 + s) + 0.004\,\min(f, 5),\ 0,\ 0.40\right)
+p = \mathrm{clip}\!\left(0.02 + 0.10\,\log_{10}(1 + s) + 0.004\,\min(f, 5),\ 0,\ 0.40\right)
 ```
 
 A swap is a **strict target** when MESP with a 1 ETH cap is at least
@@ -268,42 +267,42 @@ last 20%. The win rate WR cannot be measured offline, so every result is
 reported across WR in 0.1 to 0.9 and the capture fraction across 0.19 to
 0.60, each averaged over 20 Monte-Carlo seeds.
 
-## Profit scales linearly with the per-trade cap
+## What the per-trade cap actually buys
 
-The reason the move to Ethereum made sense at all is that the profit scales
-**linearly with how much you are allowed to commit to each trade**, up to the
-point where the victim's own slippage guard binds. On a representative victim, a
-100 ETH buy with 10% guard slack on a 2,000 ETH, 30 bps pool, the model returns a
-roughly constant 9.5% on the front regardless of its size:
+Profit on a single sandwich is linear in the front, and putting twice as much
+capital in does take roughly twice as much out, but only while a victim big
+enough to absorb that front exists. The return per trade is set by the victim's
+own price impact (its trade size relative to the pool), and the front is capped
+by the victim's slippage guard. The earlier reading of this took one whale, a
+100 ETH buy that moves a 2,000 ETH pool 5% with 10% slack, and extrapolated its
+9.5% return across a whole day. That whale is not the market: in our recorded
+decodable swaps the median victim left 0.0002% slack, and only 0.7% left 10% or
+more.
 
-| capital per trade | profit per trade | return |
-|---|---|---|
-| 0.045 ETH | 0.0043 ETH | 9.6% |
-| 0.09 ETH | 0.0086 ETH | 9.6% |
-| 0.18 ETH | 0.0173 ETH | 9.6% |
-| 1 ETH | 0.0958 ETH | 9.6% |
-| 10 ETH | 0.951 ETH | 9.5% |
+The live screener, which runs the full model over real pool state and real trade
+sizes, measured what the market actually produces:
 
-A 10 ETH cap is not ten times a small number that stays small; it is ten times
-the same percentage, and that compounds the daily total:
+| input | measured |
+|---|---|
+| sandwichable whale at a 10 ETH front | about one every several minutes |
+| MESP per whale | about 0.0035 ETH |
+| expected value per whale (WR 0.5 x capture 0.25, 0.0003 ETH landing cost) | about +0.00014 ETH |
+| realistic daily profit at a 10 ETH front | about 0.04 ETH/day |
+| realistic daily profit at our own 0.09 ETH capital | about 0 ETH/day |
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/capital-daily-dark.png">
-  <img alt="Expected daily profit against the per-trade capital cap" src="docs/research/figures/readme/capital-daily-light.png" width="90%">
+  <img alt="Realistic expected daily profit against the per-trade front" src="docs/research/figures/readme/capital-daily-light.png" width="90%">
 </picture>
 
-The figure is a **model illustration**, not a recorded run: it multiplies the
-per-trade profit above by an assumed 288 sandwichable targets per day (the
-measured whale rate is "one per several minutes"). At 10 ETH the line reads
-about **0.95 ETH per trade, or roughly 274 ETH per day**. The linearity holds
-only until the front reaches the victim's own feasibility boundary (about 100 ETH
-for this victim); past that the victim reverts and more capital buys nothing.
-
-Whether 274 ETH a day is reachable in practice is exactly what the rest of this
-document measures, and it is the honest brake on the headline number: most
-victims leave no slack at all (median ~0%, p90 ~2%), so the daily total is
-bounded by how many loose-guard victims actually appear, not by the linear math
-itself.
+The figure is an estimate built from those measured inputs, not a recorded run.
+It stays at zero until the front is large enough for a whale to clear the landing
+cost (about 7 ETH), then reaches about 0.04 ETH a day at 10 ETH. That is roughly
+7,000 times less than the 274 ETH the linear extrapolation produced, and the
+10 ETH front is exactly what we cannot put up: a flash loan repays in one
+transaction while a sandwich is two, so the front has to be our own capital,
+where the same whales fall below the landing cost and the expected daily profit
+is zero. That is the reason this was dropped.
 
 ## What the data shows
 
