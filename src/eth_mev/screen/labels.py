@@ -6,9 +6,8 @@ off — ``(block, tx_hash) -> (key, attacker, profit, block_no)``. Also marks cl
 """
 from __future__ import annotations
 
-from typing import Any
 
-from ..chain.swaps.model import Swap
+from ..chain.v2.swaps import Swap
 from ..metrics.sandwich import Sandwich, find_sandwiches
 
 
