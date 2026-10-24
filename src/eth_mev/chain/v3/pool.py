@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .v3_constants import WETH  # noqa: F401
+from .constants import WETH  # noqa: F401
 
 
 def encode_selector(sig: str) -> str:

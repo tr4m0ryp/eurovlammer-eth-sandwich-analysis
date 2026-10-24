@@ -26,8 +26,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from eth_mev.engine.allocator import Allocator
-from eth_mev.metrics.exposure import _swap_from_row, exposure
+from eth_mev.engine.allocation.v2 import Allocator
+from eth_mev.metrics.v2.exposure import _swap_from_row, exposure
 
 ROOT = Path(__file__).resolve().parents[2]
 WEI = 1_000_000_000_000_000_000

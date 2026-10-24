@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import pytest
 
-from eth_mev.engine.allocator import Allocator, WEI
-from eth_mev.exec.risk import event_risks, gate
-from eth_mev.exec.sign import load_account
-from eth_mev.exec.flashbots import FlashbotsRelay, LiveGateError, live_gates_met
+from eth_mev.engine.allocation.v2 import Allocator, WEI
+from eth_mev.exec.safety.risk import event_risks, gate
+from eth_mev.exec.bundle.sign import load_account
+from eth_mev.exec.bundle.flashbots import FlashbotsRelay, LiveGateError, live_gates_met
 
 
 def _row(block=1, tx_hash="0xabc", p=0.5, pi=0.1 * WEI, position=0.01 * WEI, pool="0xpool",
@@ -105,9 +105,7 @@ def test_sign_loads_explicit_key():
 
 def test_fee_heads_no_float_string_bug(monkeypatch):
     """The dry-run screener's fee resolver must not feed ``str(float)`` to ``int()``."""
-    import sys
-    sys.path.insert(0, ".")
-    import run
+    from eth_mev.apps.v2_screener import screener as run
     monkeypatch.setenv("MEV_BASE_FEE_WEI", "20000000000")
     monkeypatch.setenv("MEV_PRIORITY_FEE_WEI", "1000000000")
     fees = run._resolve_fee_heads()

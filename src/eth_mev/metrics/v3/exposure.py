@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from . import v3_math as m
+from . import tick_math as m
 
 GOLD = (math.sqrt(5) - 1) / 2
 CAPITAL_WEI = int(5e18)

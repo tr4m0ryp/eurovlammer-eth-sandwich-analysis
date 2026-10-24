@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from eth_abi import encode
 
-from eth_mev.chain.v3_swap import decode_universal_router
+from eth_mev.chain.v3.swaps import decode_universal_router
 
 DAI = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
 WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"

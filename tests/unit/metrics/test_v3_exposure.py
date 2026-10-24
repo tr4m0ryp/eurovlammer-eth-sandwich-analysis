@@ -1,8 +1,8 @@
 """Unit tests: V3 concentrated-liquidity sandwich exposure (golden-section MESP)."""
 from __future__ import annotations
 
-from eth_mev.metrics.v3_exposure import V3Exposure, V3Pool, exposure
-from eth_mev.metrics.v3_math import sqrt_ratio_x96
+from eth_mev.metrics.v3.exposure import V3Exposure, V3Pool, exposure
+from eth_mev.metrics.v3.tick_math import sqrt_ratio_x96
 
 
 def _pool(L=2 * 10 ** 21, fee_ppm=3000):

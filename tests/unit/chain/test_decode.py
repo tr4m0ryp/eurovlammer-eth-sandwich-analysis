@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import eth_abi
 
-from eth_mev.chain.constants import ROUTERS, SWAP_EVENT_TOPIC
-from eth_mev.chain.swaps.model import decode_swap_logs, decode_v2_router
+from eth_mev.chain.v2.constants import ROUTERS, SWAP_EVENT_TOPIC
+from eth_mev.chain.v2.swaps import decode_swap_logs, decode_v2_router
 
 
 ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"

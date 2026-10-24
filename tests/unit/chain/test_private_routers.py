@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from eth_abi import encode
 
-from eth_mev.chain.private_routers import decode_51c7, decode_278d, ROUTER_51C7, ROUTER_278D
+from eth_mev.chain.routers.private import decode_51c7, decode_278d, ROUTER_51C7, ROUTER_278D
 
 POOL = "0xe0554a476a092703abdb3ef35c80e0d76d32939f"
 USDC = "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"

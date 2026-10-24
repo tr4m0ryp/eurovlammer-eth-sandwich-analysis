@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from ..metrics.exposure import exposure
+from ..metrics.v2.exposure import exposure
 
 BUDGET_WEI = 1_000_000_000_000_000_000   # 1 ETH
 MIN_PROFIT_WEI = 10_000_000               # 0.01 ETH
@@ -75,7 +75,7 @@ class StrictScreener:
 
 def _swap(d: dict):
     """Minimal Swap the exposure math needs, rebuilt from a row."""
-    from ..chain.swaps.model import Swap
+    from ..chain.v2.swaps import Swap
     opt = lambda k: int(d[k]) if d.get(k) is not None else None  # noqa: E731
     return Swap(
         tx_hash=d.get("tx_hash", ""), block_number=d.get("block"), tx_index=d.get("tx_index", 0),

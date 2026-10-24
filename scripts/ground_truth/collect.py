@@ -16,8 +16,8 @@ import asyncio
 import time
 from pathlib import Path
 
-from eth_mev.chain.swaps.model import decode_swap_logs, decode_v2_router
-from eth_mev.chain.constants import ROUTERS as _ROUTERS
+from eth_mev.chain.v2.swaps import decode_swap_logs, decode_v2_router
+from eth_mev.chain.v2.constants import ROUTERS as _ROUTERS
 from eth_mev.chain.tx import normalized_tx
 from eth_mev.ingest.rpc import Rpc, Subscriber
 from eth_mev.metrics.sandwich import Sandwich, find_sandwiches, top_heavy

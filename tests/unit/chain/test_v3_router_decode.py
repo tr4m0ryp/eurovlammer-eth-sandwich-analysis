@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from eth_abi import encode
 
-from eth_mev.chain.v3_swap import decode_v3_router, _decode_path
-from eth_mev.chain.v3_constants import UNI_V3_ROUTER, WETH
+from eth_mev.chain.v3.swaps import decode_v3_router, _decode_path
+from eth_mev.chain.v3.constants import UNI_V3_ROUTER, WETH
 
 DAI = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
 USDC = "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
@@ -96,7 +96,7 @@ def test_decode_by_selector_regardless_of_to():
 def test_direction_sign_convention():
     """amount0 > 0 = token0 INTO pool = token0→token1 (zeroForOne). Verified against a traced
     pool swap where the trader paid WBTC (amount0=+11.14e6) and received WETH (amount1=-3.7e18)."""
-    from eth_mev.chain.v3_swap import V3Swap
+    from eth_mev.chain.v3.swaps import V3Swap
     s = V3Swap(tx_hash="0x", block_number=1, tx_index=0, log_index=0, pool="0x", token0="WBTC",
                token1="WETH", fee=3000, user="", amount0=11_143_553, amount1=-3_707_451_493_023_300_189,
                sqrt_price_x96=0, liquidity=0, tick=0)
