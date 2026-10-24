@@ -21,7 +21,7 @@ PAGE = Path(__file__).parent / "page"
 NO_CACHE = {"Cache-Control": "no-cache"}
 PARTS = {"strict": ("strict", 200), "sandwiches": ("sandwiches", 100)}
 
-PASSCODE = os.environ.get("MEV_PASSCODE", "REDACTED")
+PASSCODE = os.environ.get("MEV_PASSCODE", "")
 AUTH_COOKIE = "mev_auth"
 LOGIN_HTML = """<!doctype html>
 <html lang="en">
@@ -59,6 +59,8 @@ def _topics(req: web.Request, key: str) -> frozenset[str] | None:
 
 
 def build_app(hub: Hub) -> web.Application:
+    if not PASSCODE:
+        raise RuntimeError("set MEV_PASSCODE: the dashboard has no default passcode")
     token = secrets.token_urlsafe(32)
 
     @web.middleware
