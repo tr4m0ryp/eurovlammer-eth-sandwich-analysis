@@ -4,7 +4,7 @@ Implements the canonical V3 core maths in Python integers, matching ``SqrtPriceM
 Price is Q64.96 fixed point: ``sqrt_price_x96`` such that spot price (token1 per token0) is
 ``(sqrt_price_x96 / 2**96) ** 2``. Ticks are spaced ``tick_spacing`` apart and each carries a
 ``liquidity_net`` delta; crossing a tick mutates the active liquidity. This is the V3 analogue of the
-constant-product ``x·y=k`` legs in ``metrics/curve.py``.
+constant-product ``x·y=k`` legs in ``metrics/v2/curve.py``.
 
 The swap iterator mirrors ``SwapMath.computeSwapStep``: walk price through initialized ticks in the
 swap direction, consuming ``(1-fee)*amount_in``, accumulating output, and flipping ``liquidity`` by
