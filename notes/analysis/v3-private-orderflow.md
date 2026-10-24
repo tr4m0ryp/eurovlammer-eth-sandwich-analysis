@@ -6,10 +6,10 @@ this session (2026-10-16).
 
 ## (a) Uniswap V3 concentrated-liquidity sandwiches
 
-**Built and verified here.** `src/eth_mev/metrics/v3_math.py` implements the exact V3 tick/price
+**Built and verified here.** `src/eth_mev/metrics/v3/tick_math.py` implements the exact V3 tick/price
 arithmetic (`getSqrtRatioAtTick` computed *exactly* as `floor(Q96·√1.0001^tick)`, no dependence on the
 hex-constant table), the `amount0/amount1` deltas, and `exact_input`/`output_to_input` swap iteration
-across tick boundaries. `src/eth_mev/metrics/v3_exposure.py` computes the sandwich MESP by golden
+across tick boundaries. `src/eth_mev/metrics/v3/exposure.py` computes the sandwich MESP by golden
 section over the front-run size, evolving pool state through **front → victim → back**.
 
 Key result (pinned by unit tests): a victim buying with 10% slippage room on a pool their 100-ETH

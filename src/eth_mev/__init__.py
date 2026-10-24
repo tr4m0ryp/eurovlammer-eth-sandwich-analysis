@@ -1,9 +1,8 @@
-"""eth_mev — Ethereum mempool-sandwich engine (Uniswap V2 first).
+"""eth_mev: measurement of sandwich-attack exposure on Ethereum DEXs (thesis research).
 
-Build-to-production: ingest the public mempool, decode V2 swaps, measure their sandwich exposure,
-gate + allocate capital, and settle against inclusion-order ground truth (mev-inspect style).
-The live execution path lives in ``exec/`` but is disabled until the operator provides funded keys
-and explicitly flips the ``LIVE`` gate.
+Ingest the public mempool and confirmed blocks, decode Uniswap V2/V3 and router swaps, measure each
+swap's sandwich exposure, label real sandwiches by inclusion order and replay the opportunities
+through a counterfactual allocation model. Everything runs dry; ``exec/`` is gated and disabled.
 """
 from __future__ import annotations
 
