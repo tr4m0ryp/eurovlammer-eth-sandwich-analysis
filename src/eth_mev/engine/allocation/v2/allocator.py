@@ -22,15 +22,12 @@ import os
 import random
 import time
 
-WEI = 1_000_000_000_000_000_000  # 1 ETH
+from ..units import WEI
+from .keys import fmt_key
+from .snapshots import SnapshotMixin
 
 
-def _fmt_key(key) -> str:
-    block, tx_hash = key
-    return f"{block}:{tx_hash}" if tx_hash is not None else f"b:{block}"
-
-
-class Allocator:
+class Allocator(SnapshotMixin):
     # Tunables (ETH). Overridable via env so they can be tuned without a redeploy.
     C0 = 1.0               # initial capital and concurrent-exposure cap, in ETH
     ADVERSE = 0.01          # fractional adverse-movement loss when the lock expires with no sandwich
@@ -132,7 +129,7 @@ class Allocator:
         self.active_pools[pool] = self.active_pools.get(pool, 0) + 1
         self.n_committed += 1
         events.append({
-            "type": "commit", "key": _fmt_key(key), "pool": pool,
+            "type": "commit", "key": fmt_key(key), "pool": pool,
             "position_eth": self._eth(kappa), "expected_profit_eth": self._eth(int(row.get("expected_profit_wei") or 0)),
             "roi": row.get("roi"), "wallet_after": self.wallet_eth(),
             "lock_blocks": lock, "unlock_block": block + lock, "block": block,
@@ -182,7 +179,7 @@ class Allocator:
             self.history.append(entry)
             del self.history[:-self.HISTORY_MAX]
             events.append({
-                "type": "resolve", "key": _fmt_key(pos["key"]), "pool": pool,
+                "type": "resolve", "key": fmt_key(pos["key"]), "pool": pool,
                 "position_eth": self._eth(pos["kappa"]), "expected_profit_eth": self._eth(pos["pi"]),
                 "gain_eth": self._eth(gain), "status": entry["status"],
                 "wallet_after": self.wallet_eth(), "commit_block": pos["commit_block"],
@@ -200,39 +197,3 @@ class Allocator:
         if events:
             events.append({"type": "stats", **self.stats()})
         return events
-
-    # ---- snapshots ----
-    def stats(self) -> dict:
-        return {
-            "wallet": self.wallet_eth(), "total_locked": self._eth(self.total_locked),
-            "total_profit": self._eth(self.total_profit), "n_active": len(self.active),
-            "n_completed": self.n_completed, "n_wins": self.n_wins,
-            "n_outbid": self.n_outbid, "n_no_sandwich": self.n_no_sandwich,
-            "n_sandwiched": self.n_sandwiched, "sum_realized": self._eth(self.sum_realized),
-        }
-
-    def _active_row(self, p: dict) -> dict:
-        return {"key": _fmt_key(p["key"]), "pool": p["pool"], "position_eth": self._eth(p["kappa"]),
-                "expected_profit_eth": self._eth(p["pi"]), "roi": p["roi"],
-                "commit_block": p["commit_block"], "unlock_block": p["unlock_block"],
-                "seen_ms": p["seen_ms"], "status": "locked"}
-
-    def _history_row(self, h: dict) -> dict:
-        return {"key": _fmt_key(h["key"]), "pool": h["pool"], "position_eth": self._eth(h["kappa"]),
-                "expected_profit_eth": self._eth(h["pi"]), "gain_eth": self._eth(h["gain"]),
-                "status": h["status"], "commit_block": h["commit_block"],
-                "unlock_block": h["unlock_block"], "seen_ms": h["seen_ms"],
-                "resolved_ms": h["resolved_ms"]}
-
-    def state(self) -> dict:
-        """The full wallet state for ``/api/snapshot`` and the artifact body."""
-        positions = sorted(self.active.values(), key=lambda p: p["commit_block"], reverse=True)
-        return {
-            "wallet": self.wallet_eth(), "total_locked": self._eth(self.total_locked),
-            "total_profit": self._eth(self.total_profit), "n_active": len(self.active),
-            "n_completed": self.n_completed, "n_wins": self.n_wins,
-            "n_outbid": self.n_outbid, "n_no_sandwich": self.n_no_sandwich,
-            "n_sandwiched": self.n_sandwiched, "sum_realized": self._eth(self.sum_realized),
-            "positions": [self._active_row(p) for p in positions],
-            "history": [self._history_row(h) for h in reversed(self.history[-200:])],
-        }
