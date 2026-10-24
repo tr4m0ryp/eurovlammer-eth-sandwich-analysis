@@ -18,7 +18,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from eth_mev.metrics.v2.exposure import _swap_from_row, exposure
+from eth_mev.measure.exposure.v2.mesp import _swap_from_row, exposure
 
 BUDGET = int(1e18)          # 1 ETH
 MIN_PROFIT = 10_000_000     # 0.01 ETH
