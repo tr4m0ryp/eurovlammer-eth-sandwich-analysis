@@ -74,6 +74,13 @@ mempool / newHeads ─▶ onchain.decode ─▶ measure.exposure ─▶ measure.
 confirmed blocks ──▶ measure.detection (inclusion order) ───────────────────▶ settlement ground truth
 ```
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/path-dark.png">
+  <img alt="Pool price through one sandwich" src="docs/research/figures/readme/path-light.png" width="90%">
+</picture>
+
+<sub>Illustration, not a measurement: the p90-impact victim of the recorded V2 window (source: `included_swaps`, 1,404 swaps), a front the size of the victim. The price ends above its start because the victim's own impact stays.</sub>
+
 ## The model in formulas
 
 ### Exposure on a constant-product pool (Uniswap V2)
@@ -148,6 +155,13 @@ back) evolved through this state. Because profit is only piecewise smooth
 across ticks, the golden-section result is checked against the interval
 midpoint.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/v3range-dark.png">
+  <img alt="Price impact, V2 against V3 ranges" src="docs/research/figures/readme/v3range-light.png" width="90%">
+</picture>
+
+<sub>Model formula only: price impact $`(1+s/L)^2-1`$ for equal capital in a full-range V2 position and V3 ranges of ±50%, ±10% and ±2%. Dots mark the range edge, where the single-range approximation ends.</sub>
+
 ### Guessing the guard when it is hidden
 
 For most swaps the guard is not decodable. Instead of assuming a fixed 1%,
@@ -165,6 +179,13 @@ empirical distribution (median by default, `MEV_GUARD_PERCENTILE`):
 \widehat{\text{amountOutMinimum}} = \frac{\text{actual out}}{1 + Q_q(s)}
 ```
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/guard-dark.png">
+  <img alt="Guard slack ECDF" src="docs/research/figures/readme/guard-light.png" width="90%">
+</picture>
+
+<sub>Source: `guard_slacks`, n=3,040 decodable V3 guards (2,760 from 2026-10-16, 280 from 2026-10-24).</sub>
+
 ### Who is a likely victim
 
 The scorer outputs $`p`$, the probability that a swap gets sandwiched. It
@@ -181,6 +202,13 @@ p = \mathrm{clip}\!\left(0.02 + 0.10\,\log_{10}(1 + s) + 0.004\,\min(f, 5),\ 0,\
 
 A swap is a **strict target** when MESP with a 1 ETH cap is at least
 0.01 ETH, the front fits the cap, and the return on the front is at least 1%.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/sizedepth-dark.png">
+  <img alt="Swap size against pool depth" src="docs/research/figures/readme/sizedepth-light.png" width="90%">
+</picture>
+
+<sub>Source: `included_swaps`, n=1,404 V2 swaps. Dashed lines are constant price impact; a swap near the top-left line moves its pool most.</sub>
 
 ### The counterfactual allocator
 
@@ -247,6 +275,13 @@ f < v < b, \qquad d(f) = d(v) = -d(b), \qquad \mathrm{owner}(v) \ne A, \qquad
 where $`d`$ is the sign of the token0 flow and $`\tau`$ the token0 amount
 of each leg: the back leg must unwind roughly what the front leg bought.
 The attacker's profit is the net token0 over both legs.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/flow-dark.png">
+  <img alt="Swaps per block" src="docs/research/figures/readme/flow-light.png" width="90%">
+</picture>
+
+<sub>Source: `included_swaps`, 183 blocks. Red blocks hold one wallet trading one pool twice, the pattern the detector checks first.</sub>
 
 ### Cross-pool arbitrage
 
@@ -360,12 +395,13 @@ loan repays in one transaction while a sandwich is two.
 ### Most of the market is invisible
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/funnel-dark.png">
-  <img alt="Where V3 swaps drop out of the screen" src="docs/research/figures/readme/funnel-light.png" width="90%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/visibility-dark.png">
+  <img alt="Guard visibility and slack classes" src="docs/research/figures/readme/visibility-light.png" width="90%">
 </picture>
 
-In a 146-swap mainnet window, **only 4.1% of V3 swaps carried a guard I
-could decode**. The rest went through aggregators (1inch, 0x, ParaSwap),
+<sub>Shares with Wilson 95% intervals; n is in each label. Sources: `included_swaps` (V2, guard decodable in 27 of 1,404) and `guard_slacks` (V3).</sub>
+
+Among recorded V2 swaps, **only 1.9% carried a guard I could decode**. In a short 146-swap V3 mainnet window the share was 4.1%, a small sample that agrees in direction. The rest went through aggregators (1inch, 0x, ParaSwap),
 UniversalRouter command strings or private routers. Adding decoders for each
 raised coverage to about 25%, but the collapse happens before any filter
 parameter applies: this is a visibility problem, not a tuning problem. Half
@@ -378,11 +414,6 @@ readable `amountOutMin`, and **zero sandwiches** were detected. A 55-second
 mempool probe saw 0 V2 router calls among 323 pending transactions.
 
 ### The victims that are visible leave almost no room
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/guard-dark.png">
-  <img alt="Guard slack distribution" src="docs/research/figures/readme/guard-light.png" width="90%">
-</picture>
 
 Across 2,760 decodable V3 swaps collected over 3.0 hours:
 
@@ -416,11 +447,6 @@ Measured on the recorded V2 ground-truth window (1,404 swaps, 411 pools, 183 blo
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/pools-dark.png">
   <img alt="Swap concentration by pool" src="docs/research/figures/readme/pools-light.png" width="90%">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/flow-dark.png">
-  <img alt="Swap flow per block" src="docs/research/figures/readme/flow-light.png" width="90%">
 </picture>
 
 ## How the capital is kept safe from drainers
