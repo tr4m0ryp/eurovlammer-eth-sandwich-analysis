@@ -42,13 +42,15 @@ def price_impact(th: dict, name: str) -> None:
     rows = con.execute("select amount_in / x_pre from included_swaps "
                        "where amount_in is not null and x_pre > 0").fetchall()
     xs = sorted(r[0] for r in rows if 0 < r[0] < 1)
+    dust = sum(1 for x in xs if x < 1e-6) / len(xs)
+    xs = [x for x in xs if x >= 1e-6]
     n = len(xs)
     fig, ax = _frame(th)
-    ax.step(xs, [1 - (i + 1) / n for i in range(n)], color=th["a"], lw=2)
+    ax.step(xs, [1 - i / n for i in range(n)], color=th["a"], lw=2)
     ax.set_xscale("log")
     ax.set_xlabel("victim price impact (swap size / input reserve)")
     ax.set_ylabel("share of swaps above")
-    ax.set_title(f"Most swaps barely move their pool (n={n:,})", loc="left")
+    ax.set_title(f"Swaps above 1e-6 impact (n={n:,}); {dust:.0%} of all are dust below it", loc="left")
     fig.savefig(OUT / f"impact-{name}.png", bbox_inches="tight", dpi=200)
     plt.close(fig)
 
