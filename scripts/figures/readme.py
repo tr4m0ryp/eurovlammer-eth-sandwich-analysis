@@ -20,7 +20,7 @@ from eth_mev.config import DATA_DIR, REPO  # noqa: E402
 from eth_mev.measure.exposure.v2.mesp import _profit_buy  # noqa: E402
 from eth_mev.onchain.decode.v2.swaps import Swap  # noqa: E402
 
-from .measured import measured_figures  # noqa: E402
+from .measured import measured_figures, save  # noqa: E402
 from .mechanism import sandwich_path, v3_vs_v2  # noqa: E402
 from .visibility import guard_ecdf, visibility  # noqa: E402
 
@@ -71,7 +71,7 @@ def exposure_curve(th: dict, name: str) -> None:
     for t in leg.get_texts():
         t.set_color(th["fg"])
     _style(ax, fig, th)
-    fig.savefig(OUT / f"exposure-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"exposure-{name}.png")
     plt.close(fig)
 
 
@@ -136,7 +136,7 @@ def capital_daily(th: dict, name: str) -> None:
     ax.set_ylabel("expected daily profit (ETH)")
     ax.set_title("Realistic daily EV saturates past ~10 ETH of front")
     _style(ax, fig, th)
-    fig.savefig(OUT / f"capital-daily-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"capital-daily-{name}.png")
     plt.close(fig)
 
 

@@ -36,6 +36,13 @@ def _frame(th: dict, w: float = 7.0, h: float = 3.6):
     return fig, ax
 
 
+def save(fig, th: dict, path) -> None:
+    """Recolour every text element (titles set after framing, legends, annotations) to the theme."""
+    for t in fig.findobj(matplotlib.text.Text):
+        t.set_color(th["fg"])
+    fig.savefig(path, bbox_inches="tight", dpi=200, facecolor=th["bg"])
+
+
 def price_impact(th: dict, name: str) -> None:
     """Share of swaps whose own price impact exceeds a threshold: what a guard must absorb."""
     con = _con()
@@ -51,7 +58,7 @@ def price_impact(th: dict, name: str) -> None:
     ax.set_xlabel("victim price impact (swap size / input reserve)")
     ax.set_ylabel("share of swaps above")
     ax.set_title(f"Swaps above 1e-6 impact (n={n:,}); {dust:.0%} of all are dust below it", loc="left")
-    fig.savefig(OUT / f"impact-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"impact-{name}.png")
     plt.close(fig)
 
 
@@ -70,7 +77,7 @@ def pool_concentration(th: dict, name: str) -> None:
     ax.set_xlabel("pools ranked by swap count")
     ax.set_ylabel("cumulative share of swaps")
     ax.set_title(f"Flow is concentrated: {len(counts)} pools, {total:,} swaps", loc="left")
-    fig.savefig(OUT / f"pools-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"pools-{name}.png")
     plt.close(fig)
 
 
@@ -89,7 +96,7 @@ def block_flow(th: dict, name: str) -> None:
     ax.set_ylabel("V2 swaps in block")
     ax.set_title(f"Swaps per block; red = same wallet hits one pool twice ({len(rep)} of "
                  f"{len(rows)} blocks)", loc="left", fontsize=10)
-    fig.savefig(OUT / f"flow-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"flow-{name}.png")
     plt.close(fig)
 
 
@@ -110,7 +117,7 @@ def size_depth(th: dict, name: str) -> None:
     ax.set_xlabel("pool depth, input reserve (base units)")
     ax.set_ylabel("swap size (base units)")
     ax.set_title(f"Where swaps sit in size-depth space (n={len(rows):,})", loc="left")
-    fig.savefig(OUT / f"sizedepth-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"sizedepth-{name}.png")
     plt.close(fig)
 
 

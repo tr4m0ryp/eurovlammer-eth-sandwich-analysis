@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from eth_mev.config import DATA_DIR  # noqa: E402
 
-from .measured import OUT, _con, _frame  # noqa: E402
+from .measured import OUT, _con, _frame, save  # noqa: E402
 
 
 def _slacks() -> list[float]:
@@ -49,7 +49,7 @@ def guard_ecdf(th: dict, name: str) -> None:
     ax.set_ylabel("share of decodable V3 swaps")
     ax.set_title(f"Half of all decodable guards leave under {q[0.5] * 100:.2f}% of room (n={n:,})",
                  loc="left", fontsize=10)
-    fig.savefig(OUT / f"guard-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"guard-{name}.png")
     plt.close(fig)
 
 
@@ -74,5 +74,5 @@ def visibility(th: dict, name: str) -> None:
     ax.set_xlim(0, 100)
     ax.set_xlabel("share of class (%), Wilson 95% interval")
     ax.set_title("How visible and how loose guards are", loc="left")
-    fig.savefig(OUT / f"visibility-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"visibility-{name}.png")
     plt.close(fig)

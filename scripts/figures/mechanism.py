@@ -9,7 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from .measured import OUT, _con, _frame  # noqa: E402
+from .measured import OUT, _con, _frame, save  # noqa: E402
 
 
 def _buy(r_in: float, r_out: float, a: float, fee: float = 0.003) -> tuple[float, float, float]:
@@ -43,7 +43,7 @@ def sandwich_path(th: dict, name: str) -> None:
     ax.set_xticks(range(4), labels)
     ax.set_ylabel("price of the bought token vs start (bp)")
     ax.set_title("Illustration: one sandwich on a recorded pool, front = victim size", loc="left")
-    fig.savefig(OUT / f"path-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"path-{name}.png")
     plt.close(fig)
 
 
@@ -67,5 +67,5 @@ def v3_vs_v2(th: dict, name: str) -> None:
     ax.legend(frameon=False, labelcolor=th["fg"], fontsize=8)
     ax.set_title("Equal capital: narrower range, less impact. Dot = range edge",
                  loc="left", fontsize=10)
-    fig.savefig(OUT / f"v3range-{name}.png", bbox_inches="tight", dpi=200)
+    save(fig, th, OUT / f"v3range-{name}.png")
     plt.close(fig)
