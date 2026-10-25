@@ -21,15 +21,14 @@ from eth_mev.measure.exposure.v2.mesp import _profit_buy, tokens_for_net  # noqa
 from eth_mev.onchain.decode.v2.swaps import Swap  # noqa: E402
 
 from .measured import measured_figures  # noqa: E402
+from .mechanism import sandwich_path, v3_vs_v2  # noqa: E402
+from .visibility import guard_ecdf, visibility  # noqa: E402
 
 OUT = REPO / "docs" / "research" / "figures" / "readme"
 THEMES = {
     "light": {"bg": "#ffffff", "fg": "#1f2328", "grid": "#d0d7de", "a": "#0969da", "b": "#cf222e"},
     "dark": {"bg": "#0d1117", "fg": "#e6edf3", "grid": "#30363d", "a": "#4493f8", "b": "#f85149"},
 }
-# V3 decode funnel, 146-swap mainnet window.
-FUNNEL = [("V3 swaps decoded", 145), ("guard decodable", 6), ("guard > 0", 3),
-          ("MESP > fees", 2), ("strict target", 1)]
 
 
 def _style(ax, fig, th: dict) -> None:
@@ -45,37 +44,6 @@ def _style(ax, fig, th: dict) -> None:
     ax.title.set_color(th["fg"])
     ax.set_axisbelow(True)
     ax.grid(True, color=th["grid"], linewidth=0.6, alpha=0.7)
-
-
-def guard_cdf(th: dict, name: str) -> None:
-    con = duckdb.connect(str(DATA_DIR / "guard_estimator.duckdb"), read_only=True)
-    slacks = sorted(r[0] for r in con.execute("select slack from guard_slacks").fetchall())
-    con.close()
-    n = len(slacks)
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    ax.plot([max(s, 1e-7) * 100 for s in slacks], [(i + 1) / n for i in range(n)], color=th["a"], lw=2)
-    ax.axvline(0.1, color=th["b"], ls="--", lw=1.2)
-    ax.set_xscale("log")
-    ax.set_xlabel("guard slack: actual out / amountOutMinimum - 1 (%)")
-    ax.set_ylabel("share of victims")
-    ax.set_title(f"How much room victims leave ({n:,} decodable V3 swaps)")
-    _style(ax, fig, th)
-    fig.savefig(OUT / f"guard-{name}.png", bbox_inches="tight", dpi=200)
-    plt.close(fig)
-
-
-def funnel(th: dict, name: str) -> None:
-    labels, counts = zip(*FUNNEL)
-    fig, ax = plt.subplots(figsize=(8, 3.6))
-    ax.barh(labels[::-1], counts[::-1], color=[th["b"]] + [th["a"]] * (len(counts) - 1))
-    for i, c in enumerate(counts[::-1]):
-        ax.text(c + 1.5, i, f"{c}  ({100 * c / counts[0]:.1f}%)", va="center", color=th["fg"])
-    ax.set_xlim(0, counts[0] * 1.25)
-    ax.set_xlabel("swaps")
-    ax.set_title("Where V3 swaps drop out of the screen")
-    _style(ax, fig, th)
-    fig.savefig(OUT / f"funnel-{name}.png", bbox_inches="tight", dpi=200)
-    plt.close(fig)
 
 
 def exposure_curve(th: dict, name: str) -> None:
@@ -175,9 +143,12 @@ def capital_daily(th: dict, name: str) -> None:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for name, th in THEMES.items():
-        guard_cdf(th, name)
-        funnel(th, name)
+        guard_ecdf(th, name)
+        visibility(th, name)
+        sandwich_path(th, name)
+        v3_vs_v2(th, name)
         exposure_curve(th, name)
+        capital_daily(th, name)
         measured_figures(th, name)
     print(f"wrote figures to {OUT}")
 

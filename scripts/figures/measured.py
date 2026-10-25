@@ -75,16 +75,42 @@ def pool_concentration(th: dict, name: str) -> None:
 
 
 def block_flow(th: dict, name: str) -> None:
-    """Included V2 swaps per block across the recorded window."""
+    """V2 swaps per block; blocks where one wallet trades the same pool twice are highlighted."""
     con = _con()
     rows = con.execute("select block_number, count(*) from included_swaps "
                        "group by 1 order by 1").fetchall()
+    rep = {r[0] for r in con.execute(
+        "select distinct block_number from (select block_number, pool, user, count(*) c "
+        "from included_swaps group by 1, 2, 3 having c >= 2)").fetchall()}
     fig, ax = _frame(th)
-    ax.bar([r[0] for r in rows], [r[1] for r in rows], color=th["a"], width=1.0)
+    ax.bar([r[0] for r in rows], [r[1] for r in rows], width=1.0,
+           color=[th["b"] if r[0] in rep else th["a"] for r in rows])
     ax.set_xlabel("block number")
     ax.set_ylabel("V2 swaps in block")
-    ax.set_title(f"Swap flow per block ({len(rows)} blocks with swaps)", loc="left")
+    ax.set_title(f"Swaps per block; red = same wallet hits one pool twice ({len(rep)} of "
+                 f"{len(rows)} blocks)", loc="left", fontsize=10)
     fig.savefig(OUT / f"flow-{name}.png", bbox_inches="tight", dpi=200)
+    plt.close(fig)
+
+
+def size_depth(th: dict, name: str) -> None:
+    """Swap size against pool depth in the input token's base units, with iso-impact lines."""
+    rows = _con().execute("select x_pre, amount_in from included_swaps "
+                          "where x_pre > 0 and amount_in > 0").fetchall()
+    xs, ys = zip(*rows)
+    fig, ax = _frame(th)
+    ax.scatter(xs, ys, s=6, color=th["a"], alpha=0.5, linewidths=0)
+    lo, hi = min(xs), max(xs)
+    for imp in (1e-4, 1e-2, 1e-1):
+        ax.plot([lo, hi], [lo * imp, hi * imp], color=th["b"], ls="--", lw=1)
+        ax.annotate(f"impact {imp:g}", (hi, hi * imp), textcoords="offset points",
+                    xytext=(-4, 3), ha="right", color=th["fg"], fontsize=8)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("pool depth, input reserve (base units)")
+    ax.set_ylabel("swap size (base units)")
+    ax.set_title(f"Where swaps sit in size-depth space (n={len(rows):,})", loc="left")
+    fig.savefig(OUT / f"sizedepth-{name}.png", bbox_inches="tight", dpi=200)
     plt.close(fig)
 
 
@@ -92,3 +118,4 @@ def measured_figures(th: dict, name: str) -> None:
     price_impact(th, name)
     pool_concentration(th, name)
     block_flow(th, name)
+    size_depth(th, name)
