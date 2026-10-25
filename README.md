@@ -1,6 +1,8 @@
 # trenches-eth: Ethereum Sandwich-Exposure Analysis
 
-<a href="https://x.com/tr4m0ryp"><img alt="Follow on X" src="https://img.shields.io/badge/X-@tr4m0ryp-000000?logo=x&logoColor=white"></a>
+<p align="center">
+  <a href="https://x.com/tr4m0ryp"><img alt="Follow on X" src="https://img.shields.io/badge/X-@tr4m0ryp-000000?logo=x&logoColor=white"></a>
+</p>
 
 > **Dropped.** The profitable numbers below need a large front, and that front
 > cannot be borrowed: a flash loan repays atomically in a single transaction,
