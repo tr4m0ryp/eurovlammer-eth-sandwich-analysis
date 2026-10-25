@@ -406,6 +406,23 @@ slippage room moving a pool about 5% leaves **about 0.48 ETH** extractable
 on a 5 ETH front. Those victims are rare, and the right tail of the slack
 distribution above is where all of them live.
 
+Measured on the recorded V2 ground-truth window (1,404 swaps, 411 pools, 183 blocks). Most swaps move their pool by well under 1%, so a guard has little to absorb; the flow sits in a small set of pools; and activity is steady block to block.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/impact-dark.png">
+  <img alt="Victim price impact distribution" src="docs/research/figures/readme/impact-light.png" width="90%">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/pools-dark.png">
+  <img alt="Swap concentration by pool" src="docs/research/figures/readme/pools-light.png" width="90%">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/research/figures/readme/flow-dark.png">
+  <img alt="Swap flow per block" src="docs/research/figures/readme/flow-light.png" width="90%">
+</picture>
+
 ## How the capital is kept safe from drainers
 
 Front-running means holding a token for the length of the sandwich, so the token
