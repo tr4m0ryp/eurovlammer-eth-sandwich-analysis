@@ -68,10 +68,16 @@ The pipeline measures all three, then checks the measurements against
 ground truth: sandwiches that actually landed on chain, recognised by the
 order of transactions inside a block.
 
-```
-mempool / newHeads ─▶ onchain.decode ─▶ measure.exposure ─▶ measure.screen ─▶ strategy.allocation
-                      (V2, V3, routers)  (MESP per swap)     (strict targets)   (counterfactual P&L)
-confirmed blocks ──▶ measure.detection (inclusion order) ───────────────────▶ settlement ground truth
+```mermaid
+flowchart LR
+    A["mempool / newHeads<br/>pending and confirmed swaps"] --> B["onchain.decode<br/>V2, V3, routers"]
+    B --> C["measure.exposure<br/>MESP per swap"]
+    C --> D["measure.screen<br/>strict targets"]
+    D --> E["strategy.allocation<br/>counterfactual P&amp;L"]
+    F["confirmed blocks"] --> G["measure.detection<br/>inclusion order"]
+    G --> H["settlement<br/>ground truth"]
+    H -. "grades every flag" .-> D
+    H -. "settles every position" .-> E
 ```
 
 <picture>
