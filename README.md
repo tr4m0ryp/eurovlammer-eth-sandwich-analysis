@@ -434,18 +434,6 @@ sandwich), finishing at -0.17 ETH. Three things keep the verdict negative:
   rejects anything with MESP above 100 times its front as a likely unit
   error.
 
-## What is left to finish
-
-1. **A multi-day ground-truth window** with V3 sandwich detection, so the
-   sandwich rate has a confidence interval.
-2. **Train the victim model** on those labels and compare it with the
-   heuristic on a held-out week.
-3. **Fetch the V3 tick bitmap** so exposures across tick boundaries are exact.
-4. **Guard visibility by router family:** extend the decoders and measure how
-   the slack distribution changes as coverage grows.
-5. **A longer victim-impact sample** to tighten the frequency behind the daily
-   profit curve above.
-
 ## How the capital is kept safe from drainers
 
 Front-running means holding a token for the length of the sandwich, so the token

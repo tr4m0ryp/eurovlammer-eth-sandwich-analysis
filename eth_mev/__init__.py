@@ -1,4 +1,4 @@
-"""eth_mev: measurement of sandwich-attack exposure on Ethereum DEXs (thesis research).
+"""eth_mev: measurement of sandwich-attack exposure on Ethereum DEXs (research).
 
 Ingest the public mempool and confirmed blocks, decode Uniswap V2/V3 and router swaps, measure each
 swap's sandwich exposure, label real sandwiches by inclusion order and replay the opportunities
