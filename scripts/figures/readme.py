@@ -25,7 +25,7 @@ THEMES = {
     "light": {"bg": "#ffffff", "fg": "#1f2328", "grid": "#d0d7de", "a": "#0969da", "b": "#cf222e"},
     "dark": {"bg": "#0d1117", "fg": "#e6edf3", "grid": "#30363d", "a": "#4493f8", "b": "#f85149"},
 }
-# V3 decode funnel, 146-swap mainnet window (docs/research/findings/strict-filter-analysis.md).
+# V3 decode funnel, 146-swap mainnet window.
 FUNNEL = [("V3 swaps decoded", 145), ("guard decodable", 6), ("guard > 0", 3),
           ("MESP > fees", 2), ("strict target", 1)]
 

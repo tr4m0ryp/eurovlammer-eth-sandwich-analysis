@@ -5,7 +5,7 @@ from eth_mev.config import REPO
 
 from .. import sweep
 
-REPORT = REPO / "docs" / "research" / "findings" / "finetune-report.md"
+REPORT = ROOT / "data" / "exports" / "finetune" / "finetune-report.md"
 
 
 def fmt_vec(b: dict) -> dict:

@@ -406,34 +406,6 @@ slippage room moving a pool about 5% leaves **about 0.48 ETH** extractable
 on a 5 ETH front. Those victims are rare, and the right tail of the slack
 distribution above is where all of them live.
 
-### Counterfactual verdict: no-go
-
-The replay harness works end to end: a smoke test with realistic rows
-produced 80 commits and exercised all three outcomes (wins, outbids, no
-sandwich), finishing at -0.17 ETH. Three things keep the verdict negative:
-
-- **The win rate is unknowable from public data**, and on Solana the
-  identical allocator only turned clearly positive above WR 0.6 to 0.7. A
-  public-mempool searcher competes against builders with private order flow,
-  so the honest prior is low.
-- **The landing cost is paid on every attempt.** At V2 defaults the gas and
-  bribe alone are 0.0175 ETH per race, above the 0.01 ETH strict floor.
-- **The ground-truth window holds no sandwiches** on the visible V2 subset, so
-  there is nothing yet to train the victim model on.
-
-## Where it fails
-
-- **Private order flow is out of reach by construction.** Flashbots Protect,
-  MEV-Share and builder-direct flow never reach the public mempool, so every
-  rate above is a rate over the visible subset only.
-- **The V3 pools are read as a single active range.** The tick bitmap is
-  not fetched yet, so exposures that cross a tick are approximated.
-- **Short windows.** Three hours of guard data and 202 blocks of V2 ground
-  truth support the qualitative conclusion, not tight confidence intervals.
-- **Private-router decoders are reverse-engineered**, so the exposure step
-  rejects anything with MESP above 100 times its front as a likely unit
-  error.
-
 ## How the capital is kept safe from drainers
 
 Front-running means holding a token for the length of the sandwich, so the token
@@ -506,7 +478,7 @@ eth_mev/        the analysis package
   measure/      exposure maths, sandwich detection, screen, guard estimator, arb pricing
   strategy/     counterfactual allocation models, gated execution path
 scripts/        checks (tests), ground-truth collection, finetune replay, figures
-docs/           research (methodology, findings, figures) and the original build prompts
+docs/           research figures
 ```
 
 ## License

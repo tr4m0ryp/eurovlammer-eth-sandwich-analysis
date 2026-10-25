@@ -2,7 +2,7 @@
 
 Search runs on the first 80% of blocks; the last 20% is held out. The fast search uses the
 deterministic *expected* P&L, then the top candidates are re-scored with a Monte-Carlo mean over
-seeds. Produces ``docs/research/findings/finetune-report.md`` with a go/no-go.
+seeds. Produces ``data/exports/finetune/finetune-report.md`` with a go/no-go.
 
 """
 from __future__ import annotations
