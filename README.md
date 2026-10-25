@@ -35,8 +35,13 @@ recommend.
 Every command here still runs as a **dry-run that signs and sends nothing**. The
 execution code that prices gas, fees and builder bribes is kept only so the cost
 model uses real calldata and bundle shapes; it is switched off behind hard gates
-and has never been configured. Sandwich attacks harm the traders they target.
-Nothing here is a recommendation to run one.
+and has never been configured. To make this into a real deployment the only
+thing that needs to be added is a funded hot-wallet key and the `LIVE` flag, plus
+a builder signing key for relay submission: the bundle assembly, signing and
+`eth_sendBundle` path is already written and only gated, not missing. We removed
+the live runner on purpose, and removed it from the git history, for the ethical
+reasons above: sandwich attacks harm the traders they target, and nothing here is
+a recommendation to run one.
 
 ## The idea
 
