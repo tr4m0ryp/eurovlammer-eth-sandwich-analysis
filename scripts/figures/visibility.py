@@ -42,12 +42,12 @@ def guard_ecdf(th: dict, name: str) -> None:
     ax.plot([max(v, 1e-7) * 100 for v in s], [(i + 1) / n for i in range(n)], color=th["a"], lw=2)
     for p, v in q.items():
         ax.axvline(max(v, 1e-7) * 100, color=th["b"], ls="--", lw=1)
-        ax.annotate(f"p{int(p * 100)} = {v * 100:.2f}%", (max(v, 1e-7) * 100, p),
+        ax.annotate(f"p{int(p * 100)} = {v * 100:.4g}%", (max(v, 1e-7) * 100, p),
                     textcoords="offset points", xytext=(4, -12), color=th["fg"], fontsize=8)
     ax.set_xscale("log")
     ax.set_xlabel("guard slack: actual out / amountOutMinimum - 1 (%), zeros drawn at 1e-5 %")
     ax.set_ylabel("share of decodable V3 swaps")
-    ax.set_title(f"Half of all decodable guards leave under {q[0.5] * 100:.2f}% of room (n={n:,})",
+    ax.set_title(f"Median decodable guard leaves {q[0.5] * 100:.4f}% of room (n={n:,})",
                  loc="left", fontsize=10)
     save(fig, th, OUT / f"guard-{name}.png")
     plt.close(fig)
