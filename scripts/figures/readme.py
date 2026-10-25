@@ -20,6 +20,8 @@ from eth_mev.config import DATA_DIR, REPO  # noqa: E402
 from eth_mev.measure.exposure.v2.mesp import _profit_buy, tokens_for_net  # noqa: E402
 from eth_mev.onchain.decode.v2.swaps import Swap  # noqa: E402
 
+from .measured import measured_figures  # noqa: E402
+
 OUT = REPO / "docs" / "research" / "figures" / "readme"
 THEMES = {
     "light": {"bg": "#ffffff", "fg": "#1f2328", "grid": "#d0d7de", "a": "#0969da", "b": "#cf222e"},
@@ -176,7 +178,7 @@ def main() -> None:
         guard_cdf(th, name)
         funnel(th, name)
         exposure_curve(th, name)
-        capital_daily(th, name)
+        measured_figures(th, name)
     print(f"wrote figures to {OUT}")
 
 
