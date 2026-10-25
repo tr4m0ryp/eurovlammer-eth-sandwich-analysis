@@ -65,7 +65,7 @@ def v3_vs_v2(th: dict, name: str) -> None:
     ax.set_xlabel("buy size as a share of the position's capital")
     ax.set_ylabel("price impact")
     ax.legend(frameon=False, labelcolor=th["fg"], fontsize=8)
-    ax.set_title("Equal capital, narrower range: more depth, less impact. Dot: range edge, where the single-range model ends",
+    ax.set_title("Equal capital: narrower range, less impact. Dot = range edge",
                  loc="left", fontsize=10)
     fig.savefig(OUT / f"v3range-{name}.png", bbox_inches="tight", dpi=200)
     plt.close(fig)
