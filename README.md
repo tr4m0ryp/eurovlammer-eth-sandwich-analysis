@@ -6,7 +6,7 @@
 
 > **Dropped.** The profitable numbers below need a large front, and that front
 > cannot be borrowed: a flash loan repays atomically in a single transaction,
-> while a sandwich is two transactions. That leaves only our own capital, which
+> while this approach needs two transactions. That leaves only our own capital, which
 > was too low to produce a reliable daily return.
 
 ## What this actually was
