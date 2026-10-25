@@ -1,7 +1,7 @@
 """Markdown rendering of the finetune report, including the go/no-go recommendation."""
 from __future__ import annotations
 
-from eth_mev.config import REPO
+from eth_mev.config import ROOT
 
 from .. import sweep
 
