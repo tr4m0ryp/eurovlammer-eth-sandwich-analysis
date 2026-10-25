@@ -30,10 +30,10 @@ def sandwich_path(th: dict, name: str) -> None:
     front = victim
     x1, y1, got = _buy(x0, y0, front)
     x2, y2, _ = _buy(x1, y1, victim)
-    xb, yb, _ = _buy(y2, x2, got)  # sell the front's tokens back into the pool (reverse leg)
-    price = lambda x, y: y / x  # noqa: E731
+    yb, xb, _ = _buy(y2, x2, got)  # sell the front's tokens back into the pool (reverse leg)
+    price = lambda x, y: x / y  # noqa: E731
     labels = ["start", "after front", "after victim", "after back"]
-    px = [price(x0, y0), price(x1, y1), price(x2, y2), price(yb, xb)]
+    px = [price(x0, y0), price(x1, y1), price(x2, y2), price(xb, yb)]
     rel = [(p / px[0] - 1) * 1e4 for p in px]
     fig, ax = _frame(th)
     ax.plot(range(4), rel, color=th["a"], lw=2, marker="o")
@@ -41,7 +41,7 @@ def sandwich_path(th: dict, name: str) -> None:
         ax.annotate(f"{r:+.1f} bp", (i, r), textcoords="offset points", xytext=(0, 8),
                     ha="center", color=th["fg"], fontsize=9)
     ax.set_xticks(range(4), labels)
-    ax.set_ylabel("pool price vs start (bp)")
+    ax.set_ylabel("price of the bought token vs start (bp)")
     ax.set_title("Illustration: one sandwich on a recorded pool, front = victim size", loc="left")
     fig.savefig(OUT / f"path-{name}.png", bbox_inches="tight", dpi=200)
     plt.close(fig)
@@ -49,7 +49,7 @@ def sandwich_path(th: dict, name: str) -> None:
 
 def v3_vs_v2(th: dict, name: str) -> None:
     """Price impact of a buy sized as a share of capital, V2 against V3 ranges of equal capital."""
-    shares = [10 ** (-4 + 3 * i / 200) for i in range(201)]
+    shares = [10 ** (-4 + 3.8 * i / 200) for i in range(201)]
     fig, ax = _frame(th)
     ax.plot(shares, [(1 + 2 * s) ** 2 - 1 for s in shares],
             color=th["fg"], lw=2, label="V2, full range")
@@ -59,13 +59,13 @@ def v3_vs_v2(th: dict, name: str) -> None:
         edge = liq * (pb ** 0.5 - 1)
         xs = [s for s in shares if s <= edge]
         ax.plot(xs, [(1 + s / liq) ** 2 - 1 for s in xs], color=col, lw=2, label=f"V3 range ±{width:.0%}")
-        ax.axvline(edge, color=col, ls=":", lw=1)
+        ax.plot(edge, (1 + edge / liq) ** 2 - 1, "o", color=col)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("buy size as a share of the position's capital")
     ax.set_ylabel("price impact")
     ax.legend(frameon=False, labelcolor=th["fg"], fontsize=8)
-    ax.set_title("Same capital, thinner range: more impact. Dotted: range edge (model stops)",
+    ax.set_title("Equal capital, narrower range: more depth, less impact. Dot: range edge, where the single-range model ends",
                  loc="left", fontsize=10)
     fig.savefig(OUT / f"v3range-{name}.png", bbox_inches="tight", dpi=200)
     plt.close(fig)
