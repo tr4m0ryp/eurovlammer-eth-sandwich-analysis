@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from eth_mev.config import DATA_DIR, REPO  # noqa: E402
-from eth_mev.measure.exposure.v2.mesp import _profit_buy, tokens_for_net  # noqa: E402
+from eth_mev.measure.exposure.v2.mesp import _profit_buy  # noqa: E402
 from eth_mev.onchain.decode.v2.swaps import Swap  # noqa: E402
 
 from .measured import measured_figures  # noqa: E402
